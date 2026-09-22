@@ -30,8 +30,13 @@
 
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 
-const ROOT = new URL("..", import.meta.url).pathname;
+/* fileURLToPath, not URL.pathname — .pathname is percent-encoded (a space in
+   the path becomes %20), which breaks readFileSync for anyone whose checkout
+   lives under a path with a space (e.g. "Bulk Demo Calls"). demoStore.ts
+   already gets this right; this script and audit-seeds.ts didn't. */
+const ROOT = fileURLToPath(new URL("..", import.meta.url));
 const core = readFileSync(join(ROOT, "engine/core.ts"), "utf8");
 const launch = readFileSync(join(ROOT, "src/screens/Launch.tsx"), "utf8");
 
