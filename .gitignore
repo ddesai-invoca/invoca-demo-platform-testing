@@ -26,6 +26,19 @@ dist-ssr
 .env
 .data
 
+# Ingest-O-Matic subagents: network_config.env is materialized at boot from server
+# env vars (real Invoca credentials — never committed), state/ is a symlink onto
+# DATA_DIR (the persistent disk) so send history survives redeploys, .venv is
+# rebuilt on first boot, and generated batch CSVs are working files, not source.
+agents/subagents/*/network_config.env
+# No trailing slash: state/ is a SYMLINK onto DATA_DIR at runtime (see
+# ingestAgentPaths.ts), and a trailing-slash gitignore pattern only matches a
+# real directory, not a symlink — with the slash, git tried to add the
+# symlink itself.
+agents/subagents/*/state
+agents/subagents/*/.venv/
+agents/subagents/*/*_WITH_URLS*.csv
+
 # transient: extracted capture frames, measured then deleted
 public/__m/
 

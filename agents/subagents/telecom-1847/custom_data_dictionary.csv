@@ -1,0 +1,102 @@
+partner_name,friendly_name,data_type,field_values,default_data_mapping,created_at,attribution_model
+Destination_Phone_Number,(Destination) Phone Number,Short Text,[],,2020-09-23T09:39:01-04:00,Last
+End_of_Call_Reason,(End) of Call Reason,Short Text,[],,2020-09-23T09:39:49-04:00,Last
+Keypress,(IVR) Keypresses,Short Text,[],,2020-09-23T09:40:23-04:00,Last
+Repeat_Caller,(Repeat) Caller,Short Text,[],,2020-09-23T09:41:37-04:00,Last
+call_treatment_ab_test_path,A-B Test Path,Short Text,[],,2026-05-27T12:22:26-04:00,Last
+account_id,Account ID,Short Text,[],,2021-06-22T11:59:25-04:00,Last
+account_identifier,Account Identifier,Short Text,[],,2026-06-25T09:42:43-04:00,Last
+AdWords_Ad,AdWords Ad,Short Text,[],,2023-05-12T10:37:30-04:00,Last
+AdWords_Ad_Group,AdWords Ad Group,Short Text,[],,2023-05-12T10:37:49-04:00,Last
+AdWords_Keyword_Match_Type,AdWords Keyword Match Type,Short Text,[],,2023-05-12T10:38:26-04:00,Last
+agent,Agent,Category,[],,2021-01-22T15:35:29-05:00,Last
+ai_agent_id,AI Agent ID,Category,[],,2026-04-29T17:29:52-04:00,Last
+voice_ai_agent_name,AI Agent Name,Short Text,[],,2026-04-29T17:29:52-04:00,Last
+voice_ai_agent_qualification_status,AI Agent Qualification Status,Short Text,[],,2026-04-29T17:29:52-04:00,Last
+ai_agent_segment,AI Agent Segment,Category,[],,2026-08-04T18:48:05-04:00,Last
+voice_ai_agent_summary,AI Agent Summary,Long Text,[],,2026-04-29T17:29:52-04:00,Last
+ai_agent_workflow_id,AI Agent Workflow ID,Category,[],,2026-08-19T13:40:17-04:00,Last
+Amount,Amount,Short Text,[],,2020-09-23T09:34:52-04:00,Last
+annual_billing_amount,Annual Billing Amount,Short Text,[],,2026-06-25T15:33:34-04:00,Last
+attributon_data_ibrahim_test,Attribution Data,Category,"[""1456 Everall Street, 12345""]",,2026-05-19T16:43:08-04:00,Last
+call_direction,Call Direction,Short Text,[],,2022-07-25T17:05:43-04:00,Last
+transcript_summary,Call Summary,Long Text,[],,2024-01-30T17:03:37-05:00,Last
+callerAddress,Caller Address ECP,Short Text,[],,2024-02-09T00:04:09-05:00,Last
+calling_page,Calling Page,Category,[],,2021-01-22T15:37:05-05:00,Last
+consumer_email,Consumer Email,Short Text,[],,2026-02-11T19:39:29-05:00,Last
+consumer_first_name,Consumer First Name,Short Text,[],,2026-02-11T19:38:53-05:00,Last
+consumer_last_name,Consumer Last Name,Short Text,[],,2026-02-11T19:39:10-05:00,Last
+consumer_name,Consumer Name,Short Text,[],,2025-10-16T13:50:31-04:00,Last
+contracts_lined_up,Contracts Lined Up,Short Text,[],,2026-06-25T15:34:03-04:00,Last
+Current_Customer_Cookie,Current Customer,Short Text,[],,2020-09-23T09:36:09-04:00,Last
+Decibel_Insight_ID,Decibel Insight ID,Short Text,[],,2020-09-23T09:36:41-04:00,Last
+decibel_session_id,Decibel Session ID,Short Text,[],,2025-02-05T19:51:43-05:00,Last
+DEMO,DEMO,Short Text,[],,2025-06-13T10:31:24-04:00,Last
+Destination_numbers,Destination Numbers,Short Text,[],Destination Phone Number,2020-09-23T09:44:56-04:00,Last
+invoca_detected_destination,Detected Destination,Short Text,[],,2020-09-23T08:59:02-04:00,Unique
+Division,Division,Short Text,[],,2025-06-13T09:36:34-04:00,Last
+mcid,Experience Cloud Visitor ID,Short Text,[],,2020-09-23T09:42:10-04:00,Last
+FB,Facebook,Short Text,[],,2020-09-23T09:42:38-04:00,First
+first_interaction_type,First Interaction Type,Short Text,[],,2026-04-14T19:56:20-04:00,First
+landing_page,Full Landing Page URL,Long Text,[],,2020-09-23T10:28:27-04:00,First
+customer_id,Google Ads Customer ID,Short Text,[],,2025-02-04T16:58:53-05:00,Last
+g_cid,Google Analytics Client ID,Short Text,[],,2020-09-23T08:59:02-04:00,Last
+ga_measurement_id,Google Analytics Measurement ID,Short Text,[],,2025-02-05T19:51:45-05:00,Last
+ga_session_id,Google Analytics Session ID,Short Text,[],,2025-02-05T19:51:45-05:00,Last
+gclid,Google Click ID,Short Text,[],,2020-09-23T08:59:02-04:00,Last
+gbraid,Google GBRAID,Short Text,[],,2025-02-04T16:58:53-05:00,Last
+wbraid,Google WBRAID,Short Text,[],,2025-02-04T16:58:53-05:00,Last
+hubspotutk,HubSpot User Token,Short Text,[],,2025-02-05T19:51:46-05:00,Last
+irclickid,Impact Click ID,Short Text,[],,2025-02-05T19:51:48-05:00,Last
+mpid,Impact Partner ID,Short Text,[],,2025-02-05T19:51:48-05:00,Last
+industries_planning_to_service,Industries Planning to Service,Short Text,[],,2026-06-25T15:34:33-04:00,Last
+industries_served,Industries Served,Short Text,[],,2026-06-25T15:32:43-04:00,Last
+install_location,install location,Short Text,[],,2026-06-25T09:41:23-04:00,Last
+intent_detected_by_agent,Intent Detected by Agent,Short Text,"[""Lease new vehicle"", ""Buy new vehicle"", ""Buy used vehicle"", ""Car service"", ""Car repair""]",,2026-07-14T17:27:54-04:00,Last
+internet_usage,internet usage,Short Text,[],,2026-05-21T18:37:56-04:00,Last
+invoca_id,Invoca Unique ID,Short Text,[],,2020-09-23T08:59:02-04:00,Unique
+issue_summary,Issue Summary,Long Text,[],,2026-06-25T09:43:27-04:00,Last
+lead_phone_number,Lead Phone Number,Short Text,[],,2023-11-20T17:51:34-05:00,Last
+lead_score,lead score,Short Text,[],,2026-06-25T09:48:54-04:00,Last
+LOB,Line of Business,Category,[],,2020-09-23T10:29:01-04:00,Last
+Location,Location,Category,[],,2020-09-23T09:34:34-04:00,Last
+LocationAddress,Location Address,Short Text,[],,2020-09-23T09:35:28-04:00,Last
+LocationPhone,Location Phone,Short Text,[],,2025-06-13T09:31:25-04:00,Last
+LocationState,Location State,Short Text,[],,2025-06-13T09:31:48-04:00,Last
+LocationWebsite,Location Website,Long Text,[],,2025-06-13T09:32:37-04:00,Last
+utm_campaign,Marketing Campaign,Category,[],,2020-09-23T08:59:02-04:00,Last
+utm_content,Marketing Content,Short Text,[],,2025-09-11T10:58:56-04:00,Last
+utm_medium,Marketing Medium,Category,[],,2020-09-23T08:59:02-04:00,Last
+utm_term,Marketing Search Terms,Category,[],,2020-09-23T10:45:32-04:00,First
+utm_source,Marketing Source,Category,[],,2020-09-23T08:59:02-04:00,Last
+msclkid,Microsoft Ads Click ID,Short Text,[],,2020-09-23T08:59:02-04:00,Last
+Postal,Postal,Short Text,[],,2020-09-23T10:30:07-04:00,First
+PRI_routing,Priority Routing Phone Number,Short Text,[],,2021-02-12T13:38:19-05:00,Last
+Product,Product,Category,[],,2020-09-23T10:37:06-04:00,Last
+profile_name,Profile Name,Category,[],Profile Name,2026-05-14T12:54:38-04:00,Unique
+Promo,Promo Code,Short Text,[],,2021-04-28T09:08:58-04:00,Last
+Province,Province,Short Text,[],,2020-09-23T10:37:39-04:00,Last
+qm_session_id,QuantumMetric Session ID,Short Text,[],,2020-09-23T10:39:34-04:00,Last
+qm_replay_url,QuantumMetric_SessionReplay_URL,Short Text,[],,2020-09-23T10:39:11-04:00,Last
+recommended_speed_tier,recommended speed tier,Short Text,[],,2026-05-21T18:40:08-04:00,Last
+Recording,Recording,Short Text,[],,2020-09-23T10:42:31-04:00,Last
+Region,Region,Category,[],,2021-01-22T15:37:23-05:00,Last
+gclsrc,SA360,Short Text,[],,2020-09-23T09:55:27-04:00,Last
+segment_anonymousId,Segment Anonymous ID,Short Text,[],,2025-02-05T19:51:44-05:00,Last
+service_urgency,Service Urgency,Short Text,"[""ASAP"", ""Within a week"", ""Within a month"", ""Flexible""]",,2026-06-09T17:14:29-04:00,Last
+Shopping_Cart,Shopping Cart,Short Text,[],,2021-04-02T10:40:27-04:00,Last
+sms_callback,Sms Callback,Short Text,[],,2025-12-17T01:02:32-05:00,Last
+sms_delivery_status,Sms Delivery Status,Short Text,[],,2026-01-12T00:11:16-05:00,Last
+sms_opt_in,SMS Opt-In,Short Text,[],,2026-01-12T00:28:57-05:00,Last
+sms_opt_out,Sms opt-out,Short Text,[],,2026-01-12T00:08:42-05:00,Last
+sms_revenue,SMS Revenue,Short Text,[],,2026-01-12T00:12:37-05:00,Last
+sms_scheduled_callback_datetime,SMS Scheduled Callback Datetime,Short Text,[],,2026-07-13T16:11:39-04:00,Last
+sms_session_status,SMS Session Status,Short Text,[],,2025-10-16T13:50:31-04:00,Last
+support_reason,Support Reason,Short Text,[],,2026-06-25T09:43:05-04:00,Last
+tealium_vid,Tealium Visitor ID,Short Text,[],,2025-02-05T19:51:47-05:00,Last
+timeline,timeline,Short Text,[],,2026-05-21T18:40:39-04:00,Last
+total_messages,Total Messages,Short Text,[],,2026-01-12T00:06:44-05:00,Last
+Type,Type,Short Text,[],,2026-01-12T00:04:40-05:00,Last
+Website_Journey,Website Journey,Long Text,[],,2020-09-23T10:45:54-04:00,Multi
+years_in_business,Years in Business,Short Text,[],,2026-06-25T15:32:17-04:00,Last
+zip_code,ZIP Code,Short Text,[],,2026-05-20T15:57:49-04:00,Last

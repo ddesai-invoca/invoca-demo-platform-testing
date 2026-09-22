@@ -61,6 +61,7 @@ import { AdminNoticeModal } from "./components/AdminNoticeModal";
 import { LaunchMenu } from "./components/LaunchMenu";
 import { FeedbackBoard } from "./screens/FeedbackBoard";
 import { ReleaseNotes } from "./screens/ReleaseNotes";
+import { IngestOMatic } from "./screens/IngestOMatic";
 import { NAV } from "./components/nav";
 
 /* Some screens are EXACT static copies of real pages (the Invoca Exchange and
@@ -147,6 +148,13 @@ export default function App() {
           {/* Release notes. Full-page and outside the shell for the same reason as
               the feedback board — it is about the tool, not a prospect's demo. */}
           <Route path="/release-notes" element={<ReleaseNotes />} />
+
+          {/* Demo Call Ingest-O-Matic. Full-page and outside the shell, same reason
+              as the feedback board and release notes — it's an admin tool about the
+              platform itself, not a prospect-facing replica screen. Admin-gated
+              server-side (every /api/ingest/* route checks isAdmin); reachable only
+              from the hamburger menu, which is itself hidden for non-admins. */}
+          <Route path="/ingest-o-matic" element={<IngestOMatic />} />
 
           {/* Standalone full-page routes (no sidebar/topbar) — exact static copies */}
           {/* ⚠️ THE OLD EXACT-COPY OF invoca.com/integrations IS NOT DELETED — it still

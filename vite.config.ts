@@ -431,6 +431,57 @@ function feedbackApi(): Plugin {
   }
 }
 
+/* Dev-side twin of the production Ingest-O-Matic mount. Materializes each
+   subagent's network_config.env + state/ symlink once when the dev server
+   starts (mirrors the one-time boot step in server.ts's app.listen callback —
+   Vite's dev server has no equivalent "boot" hook, so configureServer is it). */
+function ingestApi(): Plugin {
+  return {
+    name: 'invoca-ingest-api',
+    async configureServer(server) {
+      try {
+        const { materializeIngestAgents } = await import(pathToFileURL(path.resolve(process.cwd(), 'engine/ingestAgentPaths.ts')).href)
+        const { ready, notConfigured } = materializeIngestAgents()
+        if (ready.length) console.log(`📞 Ingest-O-Matic: credentials configured for ${ready.join(', ')}.`)
+        if (notConfigured.length) console.log(`📞 Ingest-O-Matic: no credentials set for ${notConfigured.join(', ')} yet.`)
+      } catch (e) {
+        console.error('[ingest] could not materialize subagent folders:', e)
+      }
+
+      server.middlewares.use(async (req, res, next) => {
+        const url = req.url || ''
+        if (!url.startsWith('/api/ingest')) return next()
+        try {
+          let raw = ''
+          if (req.method !== 'GET' && req.method !== 'DELETE') for await (const chunk of req) raw += chunk
+          const [{ handleIngestApi }, { currentUser }, { isAdmin }] = await Promise.all([
+            import(pathToFileURL(path.resolve(process.cwd(), 'engine/ingestApi.ts')).href),
+            import(pathToFileURL(path.resolve(process.cwd(), 'googleAuth.ts')).href),
+            import(pathToFileURL(path.resolve(process.cwd(), 'engine/demoApi.ts')).href),
+          ])
+          const user = currentUser(req)
+          const result = await handleIngestApi(req.method || 'GET', url, raw ? JSON.parse(raw) : undefined, user, isAdmin(user))
+          if (!result) return next()
+          if (result.binary) {
+            res.statusCode = result.status
+            for (const [k, v] of Object.entries(result.binary.headers)) res.setHeader(k, v as string)
+            res.end(result.binary.buffer)
+            return
+          }
+          res.statusCode = result.status
+          res.setHeader('Content-Type', 'application/json')
+          res.end(JSON.stringify(result.body))
+        } catch (e: any) {
+          console.error('[ingest] failed:', e)
+          res.statusCode = 500
+          res.setHeader('Content-Type', 'application/json')
+          res.end(JSON.stringify({ error: e?.message || 'Ingest-O-Matic request failed.' }))
+        }
+      })
+    },
+  }
+}
+
 function demoLibraryApi(): Plugin {
   return {
     name: 'invoca-demo-library-api',
@@ -707,6 +758,7 @@ export default defineConfig(({ mode }) => {
       ogImageApi(),
       demoLibraryApi(),
     feedbackApi(),
+      ingestApi(),
       statusApi(),
       clientErrorApi(),
       chatApi(apiKey),
