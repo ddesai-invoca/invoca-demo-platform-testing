@@ -36,6 +36,9 @@ import { askAssistant } from "./engine/assistant.ts";
 import { installAuth, authEnabled, currentUser } from "./googleAuth.ts";
 import { handleDemoApi, isAdmin } from "./engine/demoApi.ts";
 import { handleFeedbackApi } from "./engine/feedbackApi.ts";
+import { handleIngestApi } from "./engine/ingestApi.ts";
+import { materializeIngestAgents } from "./engine/ingestAgentPaths.ts";
+import { maybeDispatchScheduled, reconcileStaleRuns } from "./engine/ingestOrchestrator.ts";
 import { mailConfigured } from "./engine/mailer.ts";
 import { DATA_DIR, isPersistent } from "./engine/demoStore.ts";
 import { alert, alertSummary, type AlertLevel } from "./engine/alerts.ts";
@@ -201,6 +204,26 @@ app.use(async (req, res, next) => {
   } catch (e: any) {
     routeFailed("feedback", e);
     res.status(500).json({ error: e?.message || "Feedback request failed." });
+  }
+});
+
+/* Demo Call Ingest-O-Matic (/api/ingest*). Admin-only — enforced inside the
+   handler, but computed here from the same isAdmin() every other admin-gated
+   route already uses. */
+app.use(async (req, res, next) => {
+  if (!req.path.startsWith("/api/ingest")) return next();
+  try {
+    const user = currentUser(req);
+    const result = await handleIngestApi(req.method, req.originalUrl, req.body, user, isAdmin(user));
+    if (!result) return next();
+    if (result.binary) {
+      res.status(result.status).set(result.binary.headers).send(result.binary.buffer);
+      return;
+    }
+    res.status(result.status).json(result.body);
+  } catch (e: any) {
+    routeFailed("ingest", e);
+    res.status(500).json({ error: e?.message || "Ingest-O-Matic request failed." });
   }
 });
 
@@ -592,6 +615,18 @@ const server = app.listen(PORT, () => {
   }
   if (!apiKey) console.warn("⚠  ANTHROPIC_API_KEY not set — the AI features will return errors. Set it in the server environment (.env or host config).");
   scheduleCanary();
+
+  /* Demo Call Ingest-O-Matic: materialize each subagent's network_config.env
+     from server env vars and point its state/ at the persistent disk (see
+     ingestAgentPaths.ts — this cannot be done at import time because it needs
+     process.env already loaded). Then sweep any run left "running" by a prior
+     restart/deploy, so the dashboard doesn't show a stuck spinner forever. */
+  const { ready, notConfigured } = materializeIngestAgents();
+  if (ready.length) console.log(`📞 Ingest-O-Matic: credentials configured for ${ready.join(", ")}.`);
+  if (notConfigured.length) console.log(`📞 Ingest-O-Matic: no credentials set for ${notConfigured.join(", ")} yet — ad-hoc/scheduled requests for that network will fail until INVOCA_*_${notConfigured[0]?.toUpperCase()} env vars are set.`);
+  const staleCount = reconcileStaleRuns();
+  if (staleCount) console.log(`📞 Ingest-O-Matic: marked ${staleCount} stuck "running" run(s) as failed (left over from a restart).`);
+  scheduleIngest();
 });
 
 /* ---- graceful shutdown -----------------------------------------------------
@@ -804,4 +839,40 @@ function scheduleCanary(): void {
       } catch (e) { console.error("🐤 Boot canary failed (ignored):", e); }
     })();
   }
+}
+
+/* ---- the ingest scheduler --------------------------------------------------
+   Sibling to scheduleCanary() above, same shape: a 10-minute tick, gated to
+   production by default (INGEST_SCHEDULE=on to force elsewhere — the same
+   reasoning as CANARY: a staging copy of production's env vars should not
+   silently start dispatching real Claude agent runs against real Invoca
+   networks on a timer nobody is watching). computeScheduledRange() already
+   returns null on a non-firing tick, and maybeDispatchScheduled() persists its
+   own "already fired for this exact range" guard, so this tick body is just:
+   ask, and let the orchestrator decide. */
+function scheduleIngest(): void {
+  const flag = (process.env.INGEST_SCHEDULE ?? "").toLowerCase();
+  if (flag === "off") {
+    console.log("📞 Ingest-O-Matic scheduler disabled (INGEST_SCHEDULE=off).");
+    return;
+  }
+  if (!isProduction() && flag !== "on") {
+    console.log(`📞 Ingest-O-Matic scheduler not armed — this is ${appEnv()}, not production (INGEST_SCHEDULE=on to force).`);
+    return;
+  }
+  const TICK_MS = 10 * 60 * 1000;
+  let running = false;
+  const tick = () => {
+    if (running) return;
+    running = true;
+    try {
+      maybeDispatchScheduled(new Date());
+    } catch (e) {
+      routeFailed("ingest-schedule-tick", e, { title: "Scheduled ingest tick failed" });
+    } finally {
+      running = false;
+    }
+  };
+  setInterval(tick, TICK_MS).unref?.();
+  console.log("📞 Ingest-O-Matic scheduler armed (checks every 10 minutes).");
 }

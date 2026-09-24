@@ -18,9 +18,11 @@
 
 import { readFileSync, readdirSync, existsSync } from "node:fs";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { auditProfile } from "../engine/canary.ts";
 
-const ROOT = new URL("..", import.meta.url).pathname;
+/* fileURLToPath, not URL.pathname — see audit-phases.ts for why. */
+const ROOT = fileURLToPath(new URL("..", import.meta.url));
 
 function load(dir: string, unwrap: (j: any) => any): { name: string; profile: any }[] {
   if (!existsSync(dir)) return [];

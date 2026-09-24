@@ -165,6 +165,17 @@ export function LaunchMenu() {
          reading the docs never loses the demo an SE is mid-way through. */
       href: "/readme.html",
     },
+    {
+      key: "ingest-o-matic",
+      icon: "call_merge",
+      label: "Demo Call Ingest-O-Matic",
+      hint: "Schedule and log bulk demo-call ingestion",
+      to: "/ingest-o-matic",
+      /* Admin only, same signal as the Inbox row above (`sum` is null for
+         non-admins — the server decides, not the client). Reusing `sum.admin`
+         rather than a second request for the same fact. */
+      hidden: !sum?.admin,
+    },
   ];
 
   const shown = items.filter((i) => !i.hidden);

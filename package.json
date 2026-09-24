@@ -14,7 +14,8 @@
     "start": "node --env-file-if-exists=.env --import tsx server.ts",
     "serve": "npm run build && npm start",
     "generate": "node --env-file-if-exists=.env engine/generate.ts",
-    "audit": "npm run typecheck && npm run audit:phases && npm run audit:voice && npm run audit:tiers && npm run audit:leads && npm run audit:calllog && npm run audit:leaddetail && npm run audit:clrecord && npm run audit:replicas && npm run audit:sources && npm run audit:place && npm run audit:events && npm run audit:app && npm run audit:admin-notice && npm run audit:alerts && node --env-file-if-exists=.env --import tsx scripts/audit-seeds.ts",
+    "audit": "npm run typecheck && npm run audit:phases && npm run audit:voice && npm run audit:tiers && npm run audit:leads && npm run audit:calllog && npm run audit:leaddetail && npm run audit:clrecord && npm run audit:replicas && npm run audit:sources && npm run audit:place && npm run audit:events && npm run audit:app && npm run audit:admin-notice && npm run audit:alerts && npm run audit:ingest-schedule && node --env-file-if-exists=.env --import tsx scripts/audit-seeds.ts",
+    "audit:ingest-schedule": "tsx scripts/audit-ingest-schedule.ts",
     "audit:phases": "tsx scripts/audit-phases.ts",
     "audit:admin-notice": "tsx scripts/audit-admin-notice.ts",
     "audit:ai": "tsx scripts/audit-ai-rules.ts",
@@ -38,6 +39,7 @@
     "capture:prune": "node --env-file-if-exists=.env --import tsx scripts/prune-replicas.ts"
   },
   "dependencies": {
+    "@anthropic-ai/claude-agent-sdk": "^0.3.280",
     "@anthropic-ai/sdk": "^0.111.0",
     "@livekit/protocol": "^1.50.4",
     "@types/leaflet": "^1.9.22",

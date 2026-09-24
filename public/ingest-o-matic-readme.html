@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<meta name="description" content="How Demo Call Ingest-O-Matic works: scheduling, ad-hoc requests, logs, and the two Claude-agent subagents that actually send calls.">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 32 32%22><rect width=%2232%22 height=%2232%22 rx=%227%22 fill=%22%2300b388%22/><path d=%22M9 10h11M9 16h8M9 22h13%22 stroke=%22%23fff%22 stroke-width=%222.6%22 stroke-linecap=%22round%22/></svg>">
+<title>Demo Call Ingest-O-Matic &mdash; How It Works</title>
+<style>
+:root {
+  --green: #00b388; --green-2: #00a87f; --ink: #0a231e; --ink-2: #3d4d48; --ink-3: #626464;
+  --surface: #f9f9f6; --surface-2: #f7f8f4; --rule: #e6e9e5; --code-bg: #f4f6f2; --code-ink: #0d5c47;
+  --amber-sf: #fff9e8; --amber-ln: #e0b050; --amber-ink: #7a5a10;
+}
+* { box-sizing: border-box; }
+html, body { overflow-x: hidden; }
+body {
+  margin: 0; background: var(--surface-2); color: var(--ink-2);
+  font: 15px/1.65 Inter, system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+.wrap { max-width: 780px; margin: 0 auto; padding: 48px 22px 90px; }
+h1 { font-size: 27px; font-weight: 600; letter-spacing: -.02em; color: var(--ink); margin: 0 0 6px; }
+.eyebrow { font-size: 11.5px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; color: var(--green-2); margin: 0 0 8px; }
+h2 { font-size: 18px; font-weight: 600; color: var(--ink); margin: 34px 0 10px; }
+h3 { font-size: 14.5px; font-weight: 700; color: var(--ink); margin: 18px 0 6px; }
+p { margin: 0 0 12px; }
+ul, ol { margin: 0 0 12px; padding-left: 22px; }
+li { margin: 0 0 6px; }
+code { background: var(--code-bg); color: var(--code-ink); padding: 1px 6px; border-radius: 5px; font-size: 13px; }
+.card { background: #fff; border: 1px solid var(--rule); border-radius: 12px; padding: 18px 20px; margin: 0 0 16px; }
+.warn { background: var(--amber-sf); border: 1px solid var(--amber-ln); color: var(--amber-ink); border-radius: 10px; padding: 12px 15px; font-size: 13.5px; }
+table { width: 100%; border-collapse: collapse; margin: 0 0 14px; font-size: 13.5px; }
+th, td { text-align: left; padding: 7px 10px; border-bottom: 1px solid var(--rule); }
+th { font-size: 11px; text-transform: uppercase; letter-spacing: .04em; color: var(--ink-3); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <p class="eyebrow">Demo Call Ingest-O-Matic</p>
+  <h1>How this module works</h1>
+  <p>Keeps Invoca's demo networks (Telecom/1847, Healthcare/2160) stocked with synthetic call
+  history — on a schedule, or on request — and keeps a running log of what got sent, what
+  failed, and what it cost.</p>
+
+  <h2>The short version</h2>
+  <div class="card">
+    <p>A <b>parent orchestrator</b> (plain server logic) decides <i>when</i> and <i>what date
+    range</i>. For every actual send, it hands the job to a <b>real Claude agent</b> scoped to
+    one network's folder, which follows that network's own <code>AGENT_PROMPT.md</code> —
+    dry-run, a 3-call test batch, then a full send, escalating on the error codes its prompt
+    says to escalate on. The orchestrator never talks to Invoca's API directly; the agent does,
+    using its own Bash tool to run that folder's Python scripts, exactly as a human operator
+    would.</p>
+  </div>
+
+  <h2>Adjusting the schedule</h2>
+  <p>One setting governs both networks. When it fires, it dispatches the same date range to
+  <i>both</i> Telecom and Healthcare.</p>
+  <table>
+    <tr><th>Cadence</th><th>Fires</th><th>Requests</th></tr>
+    <tr><td>Monthly</td><td>1st of the month, 1am</td><td>The full previous calendar month</td></tr>
+    <tr><td>Biweekly</td><td>1st and 15th, 1am</td><td>The previous half-month</td></tr>
+    <tr><td>Weekly</td><td>1st, 8th, 22nd, 28th, 1am</td><td>The preceding ~7 days</td></tr>
+    <tr><td>Daily</td><td>Every night, midnight</td><td>The previous calendar day</td></tr>
+  </table>
+
+  <h2>Add calls (ad-hoc requests)</h2>
+  <p>Pick one network, a start date, and an end date, then submit. Two rules are enforced on
+  the server, not just the form:</p>
+  <ul>
+    <li>The end date can't be in the future.</li>
+    <li>The start date can't be more than 2 years before today.</li>
+  </ul>
+  <p><b>Test mode</b> (checked by default) tells the agent to run its dry-run and 3-call test
+  batch, then stop — it never does a full send. Uncheck it only once you're confident the
+  request is right; a full send can consume real, unique call IDs from that network's content
+  bank and cannot be undone.</p>
+
+  <h2>The ingestion log &amp; error report</h2>
+  <p>Every request — scheduled or ad-hoc — gets one row: date, network, calls ingested, errors,
+  credits used (the real Anthropic API cost of the agent run that handled it), and who asked
+  for it (a real signed-in admin, or <code>Mr. Roboto</code> for a scheduled run). The Errors
+  panel breaks failures down by cause, with a plain-English explanation and a recommended fix
+  for each — written by the agent that actually hit the error — and can be downloaded as a
+  text report.</p>
+
+  <h2>Where things live</h2>
+  <ul>
+    <li><code>agents/subagents/telecom-1847/</code> and <code>agents/subagents/healthcare-2160/</code>
+    — each network's <code>AGENT_PROMPT.md</code>, ingestion scripts, and content bank
+    (<code>template_calls.csv</code>), committed to this repo.</li>
+    <li>Each folder's <code>network_config.env</code> (API credentials) and <code>state/</code>
+    (the permanent send-history ledger — never reuses a call ID) are <b>not</b> in git. Credentials
+    are written from server environment variables at boot; state lives on the persistent disk so
+    it survives redeploys.</li>
+    <li>Ingestion run records and the schedule setting live alongside the rest of this app's data
+    (one JSON file per run), the same way saved demos do.</li>
+  </ul>
+
+  <div class="warn">
+    <b>A full send is real.</b> It consumes fresh, permanently-unique call IDs and posts real
+    data to Invoca's Call Ingestion API for that network. There's no "undo" — only "add more
+    with different IDs." When in doubt, use test mode first.
+  </div>
+</div>
+</body>
+</html>
