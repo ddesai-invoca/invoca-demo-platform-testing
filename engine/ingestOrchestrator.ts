@@ -145,7 +145,11 @@ export function computeScheduledRange(cadence: Cadence, now: Date): DateRange | 
 
 // ---- run records -------------------------------------------------------
 
-export type RunStatus = "running" | "done" | "failed";
+/** "partial" = the agent reported before the full send actually finished
+ *  (its own error_details carry an INCOMPLETE_IN_PROGRESS entry) — a
+ *  snapshot, not a final tally. Kept distinct from "done" so the dashboard
+ *  never shows a mid-send count as if the run were complete. */
+export type RunStatus = "running" | "done" | "partial" | "failed";
 
 export interface ErrorDetail {
   code: string;
@@ -276,6 +280,7 @@ function buildTaskPrompt(network: Network, range: DateRange, testMode: boolean):
     `Start with step 0 of your operating procedure (prepare_date_range.py) to build a CSV for this range, then proceed through the rest of your procedure exactly as documented in AGENT_PROMPT.md.`,
     scope,
     `Report back honestly even if you had to stop early or escalate per your own rules — the structured output should reflect exactly what actually happened, not what was intended.`,
+    `A full send of several hundred rows can legitimately take many minutes to finish — that is expected, not a problem. Wait for it to actually complete (per your operating procedure's step 3) before giving your final report. Only report calls_ingested as a mid-send snapshot if you've genuinely exhausted a long wait as your procedure describes, and if so, flag it with error code INCOMPLETE_IN_PROGRESS rather than presenting it as the final tally.`,
   ].join("\n\n");
 }
 
@@ -351,7 +356,11 @@ export async function runIngestJob(input: RunJobInput, id: string = newRunId(inp
       rec.callsIngested = Number(structured.calls_ingested) || 0;
       rec.errors = Number(structured.errors) || 0;
       rec.errorDetails = Array.isArray(structured.error_details) ? structured.error_details : [];
-      rec.status = "done";
+      // The agent's own signal for "this is a mid-send snapshot, not a
+      // final tally" (see AGENT_PROMPT.md step 3) — keep it visibly
+      // distinct from a genuinely completed run rather than both reading
+      // as "done" with a number that looks final either way.
+      rec.status = rec.errorDetails.some((d) => d.code === "INCOMPLETE_IN_PROGRESS") ? "partial" : "done";
     } else {
       rec.status = "failed";
       rec.errorDetails = [{

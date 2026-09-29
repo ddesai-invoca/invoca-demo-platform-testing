@@ -109,10 +109,29 @@ Run everything from inside this folder (`cd` into it first).
 
 3. **Full send.** `python3 ingest.py --csv "<path>"`
    Sends everything not already accepted. Let it run to completion; it
-   pauses briefly between calls by design.
+   pauses briefly between calls by design (roughly 0.4-1s per row including
+   the network round trip), so a full ~500-row template can genuinely take
+   5-10+ minutes. **That is expected, not a problem — it is not stuck.**
+   Do not report back before it finishes just because it's taking a while.
+   - Run it with a generous timeout: at least `(rows to send) * 1.5`
+     seconds, and never less than 10 minutes, so a normal-sized batch
+     finishes inside one call.
+   - If you judge a batch is large enough that even a generous foreground
+     timeout might not cover it, start it in the background instead
+     (redirect stdout/stderr to a log file under `/tmp` and note the path),
+     then poll `python3 ingest.py --csv "<path>" --status` every 20-30
+     seconds until it reports every row in the CSV as attempted (accepted
+     + failed = total rows). Keep polling — don't stop at the first check.
+   - Only report back before the send has actually finished if you've
+     genuinely polled for a long time (30+ minutes) and it's still going,
+     or several consecutive polls show no progress at all. If that
+     happens: say so explicitly, use error code `INCOMPLETE_IN_PROGRESS`
+     for it, and give the exact `--status` command the parent should
+     re-run later. Never present a mid-send snapshot as the final tally.
 
 4. **Verify.** `python3 ingest.py --csv "<path>" --status`
-   Report the final tally to the parent agent: total attempted, accepted,
+   Once the send has actually finished (see step 3 — don't skip ahead),
+   report the final tally to the parent agent: total attempted, accepted,
    failed, and (if any) the specific failed IDs and their codes.
 
 5. **Retry policy.** If some calls failed:

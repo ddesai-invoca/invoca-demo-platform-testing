@@ -15,7 +15,7 @@ import { Link } from "react-router-dom";
 
 type Network = "telecom-1847" | "healthcare-2160";
 type Cadence = "monthly" | "biweekly" | "weekly" | "daily";
-type RunStatus = "running" | "done" | "failed";
+type RunStatus = "running" | "done" | "partial" | "failed";
 
 interface ErrorDetail { code: string; count: number; reason: string; explanation: string; remediation: string }
 interface RunRecord {
@@ -205,9 +205,18 @@ export function IngestOMatic() {
                       <td>{NETWORK_LABEL[r.network] ?? r.network}</td>
                       <td>{r.dateRange.start} – {r.dateRange.end}</td>
                       <td>
-                        {r.status === "running"
-                          ? <span className="ing-badge ing-badge-running">running…</span>
-                          : r.callsIngested.toLocaleString()}
+                        {r.status === "running" ? (
+                          <span className="ing-badge ing-badge-running">running…</span>
+                        ) : r.status === "partial" ? (
+                          <>
+                            {r.callsIngested.toLocaleString()}{" "}
+                            <span className="ing-badge ing-badge-partial" title="The agent reported before the full send finished — this is a snapshot, not the final count. See its error details for the follow-up command.">
+                              partial — still sending
+                            </span>
+                          </>
+                        ) : (
+                          r.callsIngested.toLocaleString()
+                        )}
                       </td>
                       <td>{r.status === "running" ? "—" : r.errors}</td>
                       <td>{r.status === "running" ? "—" : money(r.creditsUsedUsd)}</td>

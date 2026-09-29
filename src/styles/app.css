@@ -6246,6 +6246,7 @@ body:has(.vp-root) .aiad--left .aiad-panel {
 .ing-empty-row { text-align: center; color: #6b7280; padding: 24px !important; }
 .ing-badge { font-size: 11.5px; font-weight: 600; padding: 3px 9px; border-radius: 999px; border: 1px solid; }
 .ing-badge-running { background: #fff9e8; color: #7a5a10; border-color: #e5c98a; }
+.ing-badge-partial { background: #eef3fe; color: #0250d9; border-color: #cfe0fd; }
 
 .ing-side { display: flex; flex-direction: column; gap: 8px; }
 .ing-side-btn {
