@@ -41,6 +41,16 @@ subagent's files to do your job.
   minted, sent or not. Checked alongside `ingest_state.json` so two prep
   runs (even for different date ranges) never hand out the same ID twice.
   Never edit this by hand either.
+- `.venv/` — a Python virtualenv with `requests` (from `requirements.txt`)
+  already installed here, set up automatically each time this service
+  boots. **Run every `python3` command in this procedure as
+  `.venv/bin/python3 ingest.py ...`, not bare `python3`** — the system
+  Python here has no `requests` and refuses `pip install` (PEP 668,
+  externally-managed environment), so a bare `python3` call will fail on
+  that every time. Only build your own throwaway venv as a last resort if
+  `.venv/bin/python3` genuinely doesn't exist or errors — and if you do,
+  say so in your report, since it means this folder's own setup needs
+  attention, not that you should quietly work around it every run.
 
 What you'll be given per task is either (a) a CSV path that already has
 `ID name` and `Audio URL` populated, or (b) a date range (e.g. "July 1–30,
@@ -70,7 +80,7 @@ Run everything from inside this folder (`cd` into it first).
    shift dates or mint IDs any other way — reusing an old ID with a new
    date is exactly the mistake that broke the last date-shifted batch.
 
-1. **Dry run.** `python3 ingest.py --csv "<path>" --dry-run`
+1. **Dry run.** `.venv/bin/python3 ingest.py --csv "<path>" --dry-run`
    Check the printed summary: rows in the file, how many would actually be
    sent vs. already accepted before, and a sample request body. Confirm
    the sample's `custom_data` fields look sensible (right names, no blank
@@ -86,7 +96,7 @@ Run everything from inside this folder (`cd` into it first).
      yourself beyond what the script already tolerates (blank/`__`/Excel
      error placeholders are handled automatically).
 
-2. **Test batch.** `python3 ingest.py --csv "<path>" --test`
+2. **Test batch.** `.venv/bin/python3 ingest.py --csv "<path>" --test`
    Sends 3 diverse calls (one non-sale, one activation, one unanswered)
    and stops.
    - All 3 succeeded (code 201/202) → continue to step 3.
@@ -94,7 +104,7 @@ Run everything from inside this folder (`cd` into it first).
      proceed to a full send on a failed test. Common causes: wrong
      campaign/network on the token (403), malformed phone number, bad date.
 
-3. **Full send.** `python3 ingest.py --csv "<path>"`
+3. **Full send.** `.venv/bin/python3 ingest.py --csv "<path>"`
    Sends everything not already accepted. Let it run to completion; it
    pauses briefly between calls by design (roughly 0.4-1s per row including
    the network round trip), so a full ~500-row template can genuinely take
@@ -106,7 +116,7 @@ Run everything from inside this folder (`cd` into it first).
    - If you judge a batch is large enough that even a generous foreground
      timeout might not cover it, start it in the background instead
      (redirect stdout/stderr to a log file under `/tmp` and note the path),
-     then poll `python3 ingest.py --csv "<path>" --status` every 20-30
+     then poll `.venv/bin/python3 ingest.py --csv "<path>" --status` every 20-30
      seconds until it reports every row in the CSV as attempted (accepted
      + failed = total rows). Keep polling — don't stop at the first check.
    - Only report back before the send has actually finished if you've
@@ -116,7 +126,7 @@ Run everything from inside this folder (`cd` into it first).
      for it, and give the exact `--status` command the parent should
      re-run later. Never present a mid-send snapshot as the final tally.
 
-4. **Verify.** `python3 ingest.py --csv "<path>" --status`
+4. **Verify.** `.venv/bin/python3 ingest.py --csv "<path>" --status`
    Once the send has actually finished (see step 3 — don't skip ahead),
    report the final tally to the parent agent: total attempted, accepted,
    failed, and (if any) the specific failed IDs and their codes.

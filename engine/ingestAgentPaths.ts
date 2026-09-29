@@ -120,28 +120,46 @@ function materializeStateSymlink(network: Network): void {
   fs.symlinkSync(diskPath, linkPath);
 }
 
-function materializeVenv(network: Network): void {
+/** Regenerates (or repairs) this network's `.venv`, used so the agent never
+ *  has to discover `requests` is missing and improvise its own throwaway
+ *  venv mid-run (see AGENT_PROMPT.md's "What you have" note on `.venv/`).
+ *  Returns whether `requests` is now genuinely importable from it.
+ *
+ *  A prior boot's `pip` binary EXISTING is not proof its install step
+ *  actually finished — a boot can die between creating the venv and
+ *  finishing `pip install`, or partway through pip's own install — so this
+ *  verifies by actually importing `requests`, and rebuilds if that fails,
+ *  rather than trusting a `pip` binary being present forever. */
+function materializeVenv(network: Network): boolean {
   const dir = agentDir(network);
   const venv = path.join(dir, ".venv");
+  const python = path.join(venv, "bin", "python3");
   const pip = path.join(venv, "bin", "pip");
-  if (fs.existsSync(pip)) return;
+  const importsRequests = () => {
+    try { execFileSync(python, ["-c", "import requests"], { stdio: "pipe" }); return true; }
+    catch { return false; }
+  };
+  if (fs.existsSync(python) && importsRequests()) return true;
   try {
     execFileSync("python3", ["-m", "venv", ".venv"], { cwd: dir, stdio: "pipe" });
     execFileSync(pip, ["install", "-q", "-r", "requirements.txt"], { cwd: dir, stdio: "pipe" });
+    return importsRequests();
   } catch (e) {
     console.error(`[ingest] could not set up a Python environment for ${network} (need python3 on PATH):`, (e as Error).message);
+    return false;
   }
 }
 
 /** Called once at boot (server.ts and the Vite dev plugin). Idempotent. */
-export function materializeIngestAgents(): { ready: Network[]; notConfigured: Network[] } {
+export function materializeIngestAgents(): { ready: Network[]; notConfigured: Network[]; venvBroken: Network[] } {
   const ready: Network[] = [];
   const notConfigured: Network[] = [];
+  const venvBroken: Network[] = [];
   for (const network of NETWORKS) {
     materializeStateSymlink(network);
-    materializeVenv(network);
+    if (!materializeVenv(network)) venvBroken.push(network);
     if (materializeConfig(network)) ready.push(network);
     else notConfigured.push(network);
   }
-  return { ready, notConfigured };
+  return { ready, notConfigured, venvBroken };
 }
