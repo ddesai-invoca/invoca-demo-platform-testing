@@ -55,6 +55,15 @@ const ENV_SUFFIX: Record<Network, string> = {
   "healthcare-2160": "HEALTHCARE",
 };
 
+/** The exact four env var names this network needs — for boot-time logging
+ *  and any other place that has to tell a human what's missing, rather than
+ *  guessing the suffix from the network id (which produced the wrong name,
+ *  e.g. "INVOCA_*_HEALTHCARE-2160" instead of "INVOCA_*_HEALTHCARE"). */
+export function requiredEnvVarNames(network: Network): string[] {
+  const suffix = ENV_SUFFIX[network];
+  return ["INVOCA_API_TOKEN", "INVOCA_NETWORK_ID", "INVOCA_CAMPAIGN_ID", "INVOCA_ENDPOINT"].map((k) => `${k}_${suffix}`);
+}
+
 function networkConfigEnvContents(network: Network): string | null {
   const suffix = ENV_SUFFIX[network];
   const keys = {

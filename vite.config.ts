@@ -440,10 +440,12 @@ function ingestApi(): Plugin {
     name: 'invoca-ingest-api',
     async configureServer(server) {
       try {
-        const { materializeIngestAgents } = await import(pathToFileURL(path.resolve(process.cwd(), 'engine/ingestAgentPaths.ts')).href)
+        const { materializeIngestAgents, requiredEnvVarNames } = await import(pathToFileURL(path.resolve(process.cwd(), 'engine/ingestAgentPaths.ts')).href)
         const { ready, notConfigured } = materializeIngestAgents()
         if (ready.length) console.log(`📞 Ingest-O-Matic: credentials configured for ${ready.join(', ')}.`)
-        if (notConfigured.length) console.log(`📞 Ingest-O-Matic: no credentials set for ${notConfigured.join(', ')} yet.`)
+        for (const network of notConfigured) {
+          console.log(`📞 Ingest-O-Matic: no credentials set for ${network} yet — these env vars are all needed: ${requiredEnvVarNames(network).join(', ')}.`)
+        }
       } catch (e) {
         console.error('[ingest] could not materialize subagent folders:', e)
       }

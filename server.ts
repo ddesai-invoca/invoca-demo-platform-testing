@@ -37,7 +37,7 @@ import { installAuth, authEnabled, currentUser } from "./googleAuth.ts";
 import { handleDemoApi, isAdmin } from "./engine/demoApi.ts";
 import { handleFeedbackApi } from "./engine/feedbackApi.ts";
 import { handleIngestApi } from "./engine/ingestApi.ts";
-import { materializeIngestAgents } from "./engine/ingestAgentPaths.ts";
+import { materializeIngestAgents, requiredEnvVarNames } from "./engine/ingestAgentPaths.ts";
 import { maybeDispatchScheduled, reconcileStaleRuns } from "./engine/ingestOrchestrator.ts";
 import { mailConfigured } from "./engine/mailer.ts";
 import { DATA_DIR, isPersistent } from "./engine/demoStore.ts";
@@ -623,7 +623,9 @@ const server = app.listen(PORT, () => {
      restart/deploy, so the dashboard doesn't show a stuck spinner forever. */
   const { ready, notConfigured } = materializeIngestAgents();
   if (ready.length) console.log(`📞 Ingest-O-Matic: credentials configured for ${ready.join(", ")}.`);
-  if (notConfigured.length) console.log(`📞 Ingest-O-Matic: no credentials set for ${notConfigured.join(", ")} yet — ad-hoc/scheduled requests for that network will fail until INVOCA_*_${notConfigured[0]?.toUpperCase()} env vars are set.`);
+  for (const network of notConfigured) {
+    console.log(`📞 Ingest-O-Matic: no credentials set for ${network} yet — ad-hoc/scheduled requests for it will fail until these env vars are all set: ${requiredEnvVarNames(network).join(", ")}.`);
+  }
   const staleCount = reconcileStaleRuns();
   if (staleCount) console.log(`📞 Ingest-O-Matic: marked ${staleCount} stuck "running" run(s) as failed (left over from a restart).`);
   scheduleIngest();
