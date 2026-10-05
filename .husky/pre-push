@@ -1,0 +1,8 @@
+echo "pre-push: typecheck"
+npm run typecheck || {
+  echo "✗ typecheck failed — fix the errors above before pushing (or 'git push --no-verify' to skip)."
+  exit 1
+}
+
+echo "pre-push: lint (informational — does not block the push)"
+npm run lint || echo "⚠ lint found issues — see above. Not blocking push, but worth a look."
