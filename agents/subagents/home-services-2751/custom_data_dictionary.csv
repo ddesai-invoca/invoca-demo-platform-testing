@@ -1,0 +1,98 @@
+partner_name,friendly_name,data_type,field_values,default_data_mapping,created_at,attribution_model
+call_treatment_ab_test_path,A-B Test Path,Short Text,[],,2026-05-07T10:57:08-07:00,Last
+ecid,Adobe Experience Cloud ID,Short Text,[],,2024-04-09T15:09:39-07:00,Last
+Affiliate,Affiliate,Long Text,[],,2026-07-15T09:16:46-07:00,Last
+agent,Agent Name,Category,[],,2024-04-09T15:07:33-07:00,Last
+ai_agent_id,AI Agent ID,Category,[],,2026-05-18T11:41:49-07:00,Last
+voice_ai_agent_name,AI Agent Name,Short Text,[],,2026-05-18T11:41:49-07:00,Last
+voice_ai_agent_qualification_status,AI Agent Qualification Status,Short Text,[],,2026-05-18T11:41:49-07:00,Last
+ai_agent_segment,AI Agent Segment,Category,[],,2026-08-04T15:48:08-07:00,Last
+voice_ai_agent_summary,AI Agent Summary,Long Text,[],,2026-05-18T11:41:49-07:00,Last
+ai_agent_workflow_id,AI Agent Workflow ID,Category,[],,2026-08-19T10:40:23-07:00,Last
+AudienceDemographic,Audience Demographic,Short Text,[],,2026-04-22T09:01:10-07:00,Last
+available_capital,Available Capital,Short Text,[],,2026-07-09T13:15:54-07:00,Last
+bonvoy_number,Bonvoy Number,Short Text,[],,2026-07-29T20:51:59-07:00,Last
+brand_tier_interest,Brand Tier Interest,Short Text,[],,2026-07-29T20:50:50-07:00,Last
+CallBackNumberOffered,Call Back Number Offered,Short Text,[],,2026-06-05T12:54:27-07:00,Last
+CallType,Call Type,Short Text,[],,2026-03-10T13:59:38-07:00,Last
+caller_address,Caller Address,Short Text,[],,2026-05-21T17:34:28-07:00,Last
+calling_page,Calling Page,Category,[],,2024-04-01T14:26:11-07:00,Last
+cartID,Cart ID,Short Text,[],,2024-04-09T15:10:17-07:00,Last
+center_location,Center Location,Short Text,[],,2026-07-09T13:16:19-07:00,Last
+check_in_date,Check In Date,Short Text,[],,2026-07-29T20:47:42-07:00,Last
+check_out_date,Check Out Date,Short Text,[],,2026-07-29T20:50:19-07:00,Last
+city,City,Short Text,[],,2025-09-24T13:51:53-07:00,Last
+confirmation_number,Confirmation Number,Short Text,[],,2026-07-29T21:04:17-07:00,Last
+consumer_name,Consumer Name,Short Text,[],,2026-01-22T14:06:40-08:00,Last
+country,Country,Short Text,[],,2026-07-09T13:15:21-07:00,Last
+customer_name,Customer Name,Short Text,[],,2026-07-03T16:26:19-07:00,Last
+Demo,Demo Load,Category,[],,2024-04-09T15:08:14-07:00,Last
+destination_city,Destination City,Short Text,[],,2026-07-29T20:47:21-07:00,Last
+invoca_detected_destination,Detected Destination,Short Text,[],,2024-04-01T14:26:11-07:00,Unique
+disposition,Disposition,Short Text,"[""Lead Captured"", ""Trade Redirect"", ""Support Redirect""]",,2026-10-02T13:08:57-07:00,Last
+division,Division,Short Text,[],,2025-09-24T13:45:45-07:00,Last
+email_address,email address,Short Text,[],,2026-04-29T09:19:22-07:00,Last
+first_interaction_type,First Interaction Type,Short Text,[],,2026-03-31T12:41:39-07:00,First
+first_name,First Name,Short Text,[],,2026-07-09T13:13:24-07:00,Last
+landing_page,Full Landing Page URL,Long Text,[],,2024-04-01T14:26:11-07:00,First
+GeoLocation,Geo Location,Short Text,[],,2026-04-22T09:01:31-07:00,Last
+customer_id,Google Ads Customer ID,Short Text,[],,2025-02-04T14:08:59-08:00,Last
+g_cid,Google Analytics Client ID,Short Text,[],,2024-04-01T14:26:11-07:00,Last
+gclid,Google Click ID,Short Text,[],,2024-04-01T14:26:11-07:00,Last
+gbraid,Google GBRAID,Short Text,[],,2025-02-04T14:08:59-08:00,Last
+wbraid,Google WBRAID,Short Text,[],,2024-04-01T14:26:11-07:00,Last
+Interest,Interest,Short Text,[],,2026-04-22T09:02:52-07:00,Last
+interested_market,Interested Market,Short Text,[],,2026-07-09T13:15:37-07:00,Last
+invoca_caller_language,Invoca Caller Language,Category,[],,2024-04-01T14:26:09-07:00,Last
+invoca_id,Invoca Unique ID,Short Text,[],,2024-04-01T14:26:09-07:00,Unique
+last_name,Last Name,Short Text,[],,2026-07-09T13:13:45-07:00,Last
+lead_score,Lead Score,Short Text,[],,2026-07-03T16:25:22-07:00,Last
+lineofbusiness,Line Of Business,Short Text,[],,2024-04-25T14:29:14-07:00,Last
+location,Location,Short Text,[],,2024-04-09T15:08:30-07:00,Last
+LocationAddress,Location Address,Short Text,[],,2026-03-11T11:33:56-07:00,Last
+LocationCity,Location City,Short Text,[],,2026-03-11T11:33:23-07:00,Last
+LocationDivision,Location Division,Short Text,[],,2026-03-11T10:41:35-07:00,Last
+LocationPhone,Location Phone,Short Text,[],,2026-03-10T14:13:20-07:00,Last
+locationRegion,Location Region,Short Text,[],,2024-04-09T15:08:51-07:00,Last
+locationSpecialty,Location Specialty,Short Text,[],,2026-06-29T12:47:54-07:00,Last
+LocationState,Location State,Short Text,[],,2026-03-11T11:32:40-07:00,Last
+LocationWebsite,Location Website,Short Text,[],,2026-03-11T11:34:23-07:00,Last
+loyalty_reason,Loyalty Reason,Short Text,[],,2026-07-29T20:52:09-07:00,Last
+utm_campaign,Marketing Campaign,Category,[],,2024-04-01T14:26:11-07:00,Last
+marketing_channel,Marketing Channel,Short Text,[],,2026-04-24T16:30:34-07:00,Last
+utm_medium,Marketing Medium,Category,[],,2024-04-01T14:26:11-07:00,Last
+utm_term,Marketing Search Term,Category,[],,2024-04-01T14:26:11-07:00,Last
+utm_source,Marketing Source,Category,[],,2024-04-01T14:26:11-07:00,Last
+msclkid,Microsoft Ads Click ID,Short Text,[],,2024-04-01T14:26:11-07:00,Last
+Network,Network,Short Text,[],,2026-04-22T09:03:10-07:00,Last
+order_issue,Order Issue,Short Text,[],,2026-07-03T16:26:03-07:00,Last
+order_number,Order Number,Short Text,[],,2026-07-03T16:25:43-07:00,Last
+OrderQuantity,Order Quantity,Short Text,[],,2026-04-04T14:30:55-07:00,Last
+owner_name,Owner Name,Short Text,[],,2026-07-09T13:16:07-07:00,Last
+PartySize,Party Size,Short Text,"[""Less than 8 People"", ""8 people or more"", ""1"", ""2"", ""3"", ""4"", ""5"", ""6"", ""7"", ""8"", ""9""]",,2026-06-05T12:53:25-07:00,Last
+party_size,Party Size,Short Text,[],,2026-07-29T20:50:29-07:00,Last
+phone,Phone,Short Text,[],,2026-07-09T13:14:14-07:00,Last
+Placement,Placement,Short Text,[],,2026-04-22T09:01:52-07:00,Last
+productCategory,Product Category,Category,[],,2024-04-09T15:07:17-07:00,Last
+ProductComponents,Product Components,Short Text,[],,2026-03-10T11:15:22-07:00,Last
+productName,Product Name,Category,[],,2024-04-09T15:06:50-07:00,Last
+product_type,Product Type,Short Text,[],,2026-07-03T16:24:42-07:00,Last
+profile_name,Profile Name,Category,[],Profile Name,2026-07-12T13:15:31-07:00,Unique
+regionalManager,Regional Manager,Short Text,[],,2024-04-25T12:40:05-07:00,Last
+reservation_issue,Reservation Issue,Short Text,[],,2026-07-29T20:51:36-07:00,Last
+RetailPrice,Retail Price,Short Text,[],,2026-03-10T11:16:14-07:00,Last
+room_type,Room Type,Short Text,[],,2026-07-03T16:24:25-07:00,Last
+rooms_needed,Rooms Needed,Short Text,[],,2026-07-29T20:51:01-07:00,Last
+ShowGenre,Show Genre,Short Text,[],,2026-04-22T09:02:34-07:00,Last
+signals_fired_by_ai_agent,Signals Fired by AI Agent,Short Text,[],,2026-09-08T12:16:10-07:00,Last
+sms_scheduled_callback_datetime,SMS Scheduled Callback Datetime,Short Text,[],,2026-07-13T13:11:42-07:00,Last
+sms_session_status,SMS Session Status,Short Text,[],,2026-01-22T14:06:40-08:00,Last
+state,State,Short Text,[],,2025-09-24T13:52:04-07:00,Last
+stay_status,Stay Status,Short Text,[],,2026-07-29T20:51:49-07:00,Last
+store_name,Store Name,Short Text,[],,2026-07-10T09:53:55-07:00,Last
+StreamingService,Streaming Service,Short Text,[],,2026-04-22T09:02:12-07:00,Last
+consumer_swag_order,Swag Order,Short Text,[],,2026-09-11T11:28:57-07:00,Last
+timeline,Timeline,Short Text,[],,2026-06-29T18:26:49-07:00,Last
+trip_purpose,Trip Purpose,Short Text,[],,2026-07-29T20:50:40-07:00,Last
+website_journey,Website Journey,Short Text,[],,2025-09-24T13:35:31-07:00,Last
+zip_code,Zip Code,Short Text,[],,2026-05-21T17:34:55-07:00,Last

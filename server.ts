@@ -39,8 +39,8 @@ import { handleShareApi, shareReqFrom } from "./engine/share.ts";
 import { realShareDeps } from "./engine/shareDeps.ts";
 import { handleFeedbackApi } from "./engine/feedbackApi.ts";
 import { handleIngestApi } from "./engine/ingestApi.ts";
-import { materializeIngestAgents } from "./engine/ingestAgentPaths.ts";
-import { maybeDispatchScheduled, reconcileStaleRuns } from "./engine/ingestOrchestrator.ts";
+import { materializeIngestAgents, requiredEnvVarNames, NETWORKS } from "./engine/ingestAgentPaths.ts";
+import { maybeDispatchScheduled, reconcileStaleRuns, reconcileStaleGenerations } from "./engine/ingestOrchestrator.ts";
 import { mailConfigured } from "./engine/mailer.ts";
 import { DATA_DIR, isPersistent } from "./engine/demoStore.ts";
 import { alert, alertSummary, type AlertLevel } from "./engine/alerts.ts";
@@ -659,11 +659,17 @@ const server = app.listen(PORT, () => {
      ingestAgentPaths.ts — this cannot be done at import time because it needs
      process.env already loaded). Then sweep any run left "running" by a prior
      restart/deploy, so the dashboard doesn't show a stuck spinner forever. */
-  const { ready, notConfigured } = materializeIngestAgents();
+  const { ready, notConfigured, venvBroken } = materializeIngestAgents();
   if (ready.length) console.log(`📞 Ingest-O-Matic: credentials configured for ${ready.join(", ")}.`);
-  if (notConfigured.length) console.log(`📞 Ingest-O-Matic: no credentials set for ${notConfigured.join(", ")} yet — ad-hoc/scheduled requests for that network will fail until INVOCA_*_${notConfigured[0]?.toUpperCase()} env vars are set.`);
+  for (const network of notConfigured) {
+    console.log(`📞 Ingest-O-Matic: no credentials set for ${network} yet — ad-hoc/scheduled requests for it will fail until these env vars are all set: ${requiredEnvVarNames(network).join(", ")}.`);
+  }
+  if (venvBroken.length) console.log(`📞 Ingest-O-Matic: couldn't set up (or repair) a working .venv with 'requests' for ${venvBroken.join(", ")} — its subagent will have to fall back to its own throwaway venv every run until this is fixed (need python3 on PATH, with the venv module available).`);
+  else console.log(`📞 Ingest-O-Matic: .venv ready (requests importable) for ${NETWORKS.join(", ")}.`);
   const staleCount = reconcileStaleRuns();
   if (staleCount) console.log(`📞 Ingest-O-Matic: marked ${staleCount} stuck "running" run(s) as failed (left over from a restart).`);
+  const staleGenCount = reconcileStaleGenerations();
+  if (staleGenCount) console.log(`📞 Ingest-O-Matic: cleared ${staleGenCount} network(s) stuck "generating" (left over from a restart).`);
   scheduleIngest();
 });
 

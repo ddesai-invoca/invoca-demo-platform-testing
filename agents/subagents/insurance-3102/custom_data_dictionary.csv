@@ -1,0 +1,26 @@
+# PLACEHOLDER -- NOT a real Invoca Custom Data Dictionary export.
+# The network for www.bestcoveragepolicy.com does not exist in Invoca yet,
+# so there is nothing to export. The rows below are a conservative guess:
+# only partner_names that appear in at least 3 of the 4 real exports
+# already on file in this project (Finance/1752, Telecom/1847,
+# Healthcare/2160, Law/3062) are listed, standing in until a real network
+# is created and a genuine export replaces this file. Re-verify every name
+# in ingest.py's CUSTOM_DATA against that real export before the first live
+# send -- do not trust this file for a production send.
+partner_name,friendly_name,data_type,field_values,default_data_mapping,created_at,attribution_model
+agent,Agent,Category,[],,UNVERIFIED,Last
+Region,Region,Category,[],,UNVERIFIED,Last
+revenue,Revenue,Short Text,[],,UNVERIFIED,Last
+utm_source,Marketing Source,Category,[],,UNVERIFIED,Last
+utm_medium,Marketing Medium,Category,[],,UNVERIFIED,Last
+utm_campaign,Marketing Campaign,Category,[],,UNVERIFIED,Last
+utm_term,Marketing Search Terms,Category,[],,UNVERIFIED,Last
+landing_page,Landing Page,Short Text,[],,UNVERIFIED,Last
+calling_page,Calling Page,Short Text,[],,UNVERIFIED,Last
+gclid,Google Click ID,Short Text,[],,UNVERIFIED,Last
+gbraid,Google GBRAID,Short Text,[],,UNVERIFIED,Last
+wbraid,Google WBRAID,Short Text,[],,UNVERIFIED,Last
+customer_id,Google Ads Customer ID,Short Text,[],,UNVERIFIED,Last
+ga_session_id,Google Analytics Session ID,Short Text,[],,UNVERIFIED,Last
+g_cid,Google Analytics Client ID,Short Text,[],,UNVERIFIED,Last
+ga_measurement_id,Google Analytics Measurement ID,Short Text,[],,UNVERIFIED,Last

@@ -46,6 +46,19 @@ What you'll be given per task is either (a) a CSV path that already has
 `ID name` and `Audio URL` populated, or (b) a date range (e.g. "July 1–30,
 2025"). Case (b) needs step 0 below before anything else.
 
+## Something specific to this network
+
+`template_calls.csv` carries two columns that are plain column-to-field
+copies in `ingest.py` (no special handling needed) but are worth knowing
+the shape of if you're ever asked to explain what got sent for a call:
+- `Agent` — one of six demo agent names, assigned per row.
+- `Amount` — a dollar figure, already baked into the template, sized to
+  roughly match the product named in that row's own `Marketing Campaign`
+  (e.g. `triple_play_bundle_*` is priced higher than
+  `student_internet_deal_*`). It is only ever non-blank (`__` otherwise) on
+  rows where `New Service Activation` is `1` — a call that didn't result in
+  a new activation has no revenue to report, by design.
+
 ## What you do NOT do
 
 Generating genuinely new audio content (new transcripts, new

@@ -38,6 +38,8 @@ agents/subagents/*/network_config.env
 agents/subagents/*/state
 agents/subagents/*/.venv/
 agents/subagents/*/*_WITH_URLS*.csv
+agents/subagents/*/__pycache__/
+agents/subagents/*/*.bak-*
 
 # transient: extracted capture frames, measured then deleted
 public/__m/

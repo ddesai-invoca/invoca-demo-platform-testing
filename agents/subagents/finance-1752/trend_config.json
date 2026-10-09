@@ -1,0 +1,8 @@
+{
+  "network": "finance-1752",
+  "notAnswered": { "column": "Answered by Agent", "value": "0" },
+  "conversion": [
+    { "column": "Application Submitted", "value": "1" },
+    { "column": "Qualified Lead", "value": "1" }
+  ]
+}

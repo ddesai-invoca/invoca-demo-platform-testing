@@ -69,6 +69,8 @@ CUSTOM_DATA = {
     "Region": "Region",
     "Division": "Division",
     "Location": "Facility",
+    "Agent": "Agent",
+    "Revenue": "revenue",
     "Marketing Source": "utm_source",
     "Marketing Medium": "utm_medium",
     "Marketing Campaign": "utm_campaign",

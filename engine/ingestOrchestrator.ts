@@ -15,13 +15,19 @@
 
 import fs from "node:fs";
 import path from "node:path";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
 import { query } from "@anthropic-ai/claude-agent-sdk";
 import { DATA_DIR } from "./demoStore.ts";
-import { agentDir, NETWORKS, NETWORK_LABEL, type Network } from "./ingestAgentPaths.ts";
+import { agentDir, agentBatchDir, NETWORKS, NETWORK_LABEL, type Network } from "./ingestAgentPaths.ts";
+import {
+  getNetworkSettings, saveNetworkSettings, cadenceWindowDays,
+  type Cadence, type NetworkSettings, type BatchState, type BatchFileEntry,
+} from "./ingestNetworkSettings.ts";
 import { alert } from "./alerts.ts";
 
+const execFileAsync = promisify(execFile);
 const RUNS_DIR = path.join(DATA_DIR, "ingest-runs");
-const SCHEDULE_FILE = path.join(DATA_DIR, "ingest-schedule.json");
 
 function writeAtomic(file: string, data: string) {
   const tmp = `${file}.${process.pid}.tmp`;
@@ -30,46 +36,21 @@ function writeAtomic(file: string, data: string) {
 }
 function ensureRunsDir() { fs.mkdirSync(RUNS_DIR, { recursive: true }); }
 
-export type Cadence = "monthly" | "biweekly" | "weekly" | "daily";
-export const CADENCES: Cadence[] = ["monthly", "biweekly", "weekly", "daily"];
-
-export interface ScheduleConfig {
-  cadence: Cadence;
-  updatedAt: string;
-  updatedBy: { email: string; name: string };
-  /** Guards the scheduler tick against re-firing the same computed range more
-   *  than once (a 10-minute tick evaluates a firing day many times, and a
-   *  restart on that same day must not double-dispatch either). */
-  lastFiredKey?: string;
-}
-
-const DEFAULT_SCHEDULE: ScheduleConfig = {
-  cadence: "monthly",
-  updatedAt: new Date(0).toISOString(),
-  updatedBy: { email: "system", name: "System default" },
-};
-
-export function getSchedule(): ScheduleConfig {
+// ---- message-level audit trail ----------------------------------------------
+// Backend-only, no UI (decision #9) — just needed on disk for later debugging.
+// Append-only JSON Lines, deliberately NOT a rewrite-the-whole-file pattern:
+// ingest.py's own per-row save_state() already shows what that costs once a
+// ledger grows large (O(ledger size) per write); appendFileSync here is
+// O(message size) per write, no matter how long a run's transcript gets.
+const AUDIT_DIR = path.join(DATA_DIR, "ingest-run-audit");
+function appendAuditLine(runId: string, entry: Record<string, unknown>): void {
   try {
-    return { ...DEFAULT_SCHEDULE, ...JSON.parse(fs.readFileSync(SCHEDULE_FILE, "utf8")) };
+    fs.mkdirSync(AUDIT_DIR, { recursive: true });
+    const line = JSON.stringify({ ts: new Date().toISOString(), ...entry });
+    fs.appendFileSync(path.join(AUDIT_DIR, `${runId}.jsonl`), line + "\n");
   } catch {
-    return DEFAULT_SCHEDULE;
+    // Never let audit logging itself break a real ingestion run.
   }
-}
-
-export function saveSchedule(cadence: Cadence, by: { email: string; name: string }): ScheduleConfig {
-  fs.mkdirSync(DATA_DIR, { recursive: true });
-  const next: ScheduleConfig = { cadence, updatedAt: new Date().toISOString(), updatedBy: by };
-  writeAtomic(SCHEDULE_FILE, JSON.stringify(next, null, 2));
-  return next;
-}
-
-/** Persists just the scheduler's own dedupe key, without disturbing the rest
- *  of the config (a save from the UI and a save from the tick can race, but
- *  the tick only ever touches this one field). */
-function markFired(key: string): void {
-  const current = getSchedule();
-  writeAtomic(SCHEDULE_FILE, JSON.stringify({ ...current, lastFiredKey: key }, null, 2));
 }
 
 // ---- date-range rules -------------------------------------------------------
@@ -102,8 +83,11 @@ export function validateAdhocRange(
 /** The 4 cadence rules, computed off an injectable "now" — returns null on a
  *  tick that isn't a firing moment for that cadence. Anchor days are taken
  *  literally from the brief (1st/8th/22nd/28th for weekly) rather than
- *  re-derived from a strict 7-day grid. */
-export function computeScheduledRange(cadence: Cadence, now: Date): DateRange | null {
+ *  re-derived from a strict 7-day grid. Pinned by scripts/audit-ingest-
+ *  schedule.ts — still used for the DATE ARITHMETIC (which day is a firing
+ *  day) even though Phase 2 no longer uses the date RANGE it returns (dates
+ *  are assigned per-file at send time now — see restampFile below). */
+export function computeScheduledRange(cadence: Exclude<Cadence, "off">, now: Date): DateRange | null {
   const day = now.getDate();
   const y = now.getFullYear();
   const m = now.getMonth();
@@ -143,9 +127,20 @@ export function computeScheduledRange(cadence: Cadence, now: Date): DateRange | 
   return null;
 }
 
+/** Boolean-only firing check for Phase 2's per-network scheduler — reuses
+ *  computeScheduledRange's exact day arithmetic (never a second, separately
+ *  maintained copy of it) and just discards the range it returns. */
+export function isFiringDay(cadence: Exclude<Cadence, "off">, now: Date): boolean {
+  return computeScheduledRange(cadence, now) !== null;
+}
+
 // ---- run records -------------------------------------------------------
 
-export type RunStatus = "running" | "done" | "failed";
+/** "partial" = the agent reported before the full send actually finished
+ *  (its own error_details carry an INCOMPLETE_IN_PROGRESS entry) — a
+ *  snapshot, not a final tally. Kept distinct from "done" so the dashboard
+ *  never shows a mid-send count as if the run were complete. */
+export type RunStatus = "running" | "done" | "partial" | "failed";
 
 export interface ErrorDetail {
   code: string;
@@ -267,15 +262,19 @@ const REPORT_SCHEMA = {
   required: ["calls_ingested", "errors", "error_details"],
 } as const;
 
-function buildTaskPrompt(network: Network, range: DateRange, testMode: boolean): string {
+function buildTaskPrompt(network: Network, range: DateRange, testMode: boolean, cachedFile?: string): string {
   const scope = testMode
     ? "TEST MODE: run through the dry-run and the built-in 3-call test batch (per your operating procedure), then STOP. Do NOT proceed to a full send, however good the test batch looks."
     : "Run your full operating procedure through to completion: dry-run, test batch, then the full send.";
+  const step0 = cachedFile
+    ? `A CSV has already been prepared for you at ${cachedFile} by this network's deterministic trend-shaping script. Do NOT run prepare_date_range.py and do not modify this file in any way — using exactly this file IS step 0. Start at step 1 of your operating procedure (dry-run) against that file, then proceed through the rest of your procedure exactly as documented in AGENT_PROMPT.md.`
+    : `Start with step 0 of your operating procedure (prepare_date_range.py) to build a CSV for this range, then proceed through the rest of your procedure exactly as documented in AGENT_PROMPT.md.`;
   return [
     `You are being asked to ingest calls for ${NETWORK_LABEL[network]} for the date range ${range.start} to ${range.end} (inclusive).`,
-    `Start with step 0 of your operating procedure (prepare_date_range.py) to build a CSV for this range, then proceed through the rest of your procedure exactly as documented in AGENT_PROMPT.md.`,
+    step0,
     scope,
     `Report back honestly even if you had to stop early or escalate per your own rules — the structured output should reflect exactly what actually happened, not what was intended.`,
+    `A full send of several hundred rows can legitimately take many minutes to finish — that is expected, not a problem. Wait for it to actually complete (per your operating procedure's step 3) before giving your final report. Only report calls_ingested as a mid-send snapshot if you've genuinely exhausted a long wait as your procedure describes, and if so, flag it with error code INCOMPLETE_IN_PROGRESS rather than presenting it as the final tally.`,
   ].join("\n\n");
 }
 
@@ -284,6 +283,11 @@ export interface RunJobInput {
   dateRange: DateRange;
   requestor: RunRecord["requestor"];
   testMode: boolean;
+  /** Phase 2: a batch file already built by trend_batch.py and restamped
+   *  for today. When set, the agent is told to skip prepare_date_range.py
+   *  entirely and work directly from this file. Absent for ad-hoc requests,
+   *  which still build their own CSV the way they always have. */
+  cachedFile?: string;
 }
 
 function newRunId(network: Network): string {
@@ -312,7 +316,7 @@ export async function runIngestJob(input: RunJobInput, id: string = newRunId(inp
   try {
     const cwd = agentDir(input.network);
     const promptMd = fs.readFileSync(path.join(cwd, "AGENT_PROMPT.md"), "utf8");
-    const task = buildTaskPrompt(input.network, input.dateRange, input.testMode);
+    const task = buildTaskPrompt(input.network, input.dateRange, input.testMode, input.cachedFile);
 
     let finalText = "";
     let structured: any = null;
@@ -331,6 +335,11 @@ export async function runIngestJob(input: RunJobInput, id: string = newRunId(inp
         outputFormat: { type: "json_schema", schema: REPORT_SCHEMA },
       },
     })) {
+      appendAuditLine(id, {
+        type: message.type,
+        subtype: (message as any).subtype,
+        summary: JSON.stringify(message).slice(0, 2000),
+      });
       if (message.type === "result") {
         sessionId = message.session_id;
         creditsUsedUsd = message.total_cost_usd ?? 0;
@@ -351,7 +360,11 @@ export async function runIngestJob(input: RunJobInput, id: string = newRunId(inp
       rec.callsIngested = Number(structured.calls_ingested) || 0;
       rec.errors = Number(structured.errors) || 0;
       rec.errorDetails = Array.isArray(structured.error_details) ? structured.error_details : [];
-      rec.status = "done";
+      // The agent's own signal for "this is a mid-send snapshot, not a
+      // final tally" (see AGENT_PROMPT.md step 3) — keep it visibly
+      // distinct from a genuinely completed run rather than both reading
+      // as "done" with a number that looks final either way.
+      rec.status = rec.errorDetails.some((d) => d.code === "INCOMPLETE_IN_PROGRESS") ? "partial" : "done";
     } else {
       rec.status = "failed";
       rec.errorDetails = [{
@@ -394,17 +407,173 @@ export function enqueueIngestJob(input: RunJobInput): { runId: string } {
   return { runId: id };
 }
 
-/** Scheduler entry point: dispatches the same computed range to BOTH networks,
- *  guarded so a 10-minute tick re-evaluating the same firing day doesn't
- *  double-dispatch (persisted, so a restart on the same day doesn't either). */
-export function maybeDispatchScheduled(now: Date): void {
-  const schedule = getSchedule();
-  const range = computeScheduledRange(schedule.cadence, now);
-  if (!range) return;
-  const key = `${schedule.cadence}:${range.start}:${range.end}`;
-  if (key === schedule.lastFiredKey) return;
-  markFired(key);
-  for (const network of NETWORKS) {
-    void runIngestJob({ network, dateRange: range, requestor: "Mr. Roboto", testMode: false });
+// ---- Phase 2: trend batches ------------------------------------------------
+//
+// Trend-shaping is always a deterministic script (trend_batch.py, one copy
+// per network), never agent judgment — the same hard rule AGENT_PROMPT.md
+// already enforces for prepare_date_range.py's IDs/dates. The orchestrator
+// calls it directly (execFile, not an Agent SDK session) to build a whole
+// network's upload batch in one shot, then the existing agent-invocation
+// pipeline (runIngestJob/buildTaskPrompt) just sends whichever cached file
+// is next, exactly as it already knows how to send an ad-hoc CSV.
+
+const generatingNow = new Set<Network>();
+const sendingNow = new Set<Network>();
+
+/** Direct-shells trend_batch.py to build a network's whole upload batch.
+ *  Not an agent session — this is pure deterministic row/ID math, nothing
+ *  here calls for judgment. */
+async function generateFullBatch(network: Network, settings: NetworkSettings, cycleNumber: number): Promise<BatchState> {
+  const outDir = path.join(agentBatchDir(network), `${network}-${Date.now()}`);
+  fs.mkdirSync(outDir, { recursive: true });
+  const python = path.join(agentDir(network), ".venv", "bin", "python3");
+  const script = path.join(agentDir(network), "trend_batch.py");
+  const { stdout } = await execFileAsync(python, [
+    script,
+    "--cadence", settings.cadence,
+    "--trend", settings.trend,
+    "--period", settings.trendPeriod,
+    "--calls-per-upload", String(settings.callsPerUpload),
+    "--cycle-number", String(cycleNumber),
+    "--out-dir", outDir,
+  ], { maxBuffer: 16 * 1024 * 1024 });
+  // The script may print progress lines before its one JSON summary line —
+  // take the last line, same tolerance pattern as parsing the agent's own
+  // fenced JSON report elsewhere in this file.
+  const lastLine = stdout.trim().split("\n").pop() ?? "{}";
+  const parsed = JSON.parse(lastLine) as { totalUploads: number; files: string[] };
+  const files: BatchFileEntry[] = parsed.files.map((p, index) => ({ path: p, index }));
+  return {
+    batchId: path.basename(outDir),
+    generatedAt: new Date().toISOString(),
+    settingsSnapshot: {
+      cadence: settings.cadence, trend: settings.trend,
+      trendPeriod: settings.trendPeriod, callsPerUpload: settings.callsPerUpload,
+    },
+    totalUploads: parsed.totalUploads,
+    nextUploadIndex: 0,
+    cycleNumber,
+    files,
+  };
+}
+
+/** Generates (or regenerates) a network's batch, persisting the "generating"
+ *  lock around it so a crash mid-generation is recoverable on the next boot
+ *  (see reconcileStaleGenerations) rather than leaving settings stuck
+ *  showing "Generating…" forever. Idempotent against a same-process race
+ *  via `generatingNow`. */
+export async function regenerateBatch(network: Network, cycleNumber?: number): Promise<NetworkSettings> {
+  if (generatingNow.has(network)) return getNetworkSettings(network);
+  generatingNow.add(network);
+  let settings = getNetworkSettings(network);
+  saveNetworkSettings(network, { ...settings, generatingSince: new Date().toISOString() });
+  try {
+    const nextCycle = cycleNumber ?? (settings.batch?.cycleNumber ?? 0) + 1;
+    const batch = await generateFullBatch(network, settings, nextCycle);
+    settings = getNetworkSettings(network); // re-read: a setting could have changed while generating
+    settings = saveNetworkSettings(network, { ...settings, batch, generatingSince: null });
+  } catch (e) {
+    settings = getNetworkSettings(network);
+    settings = saveNetworkSettings(network, { ...settings, generatingSince: null });
+    void alert({
+      key: `ingest-generate:${network}`,
+      title: `Ingest-O-Matic batch generation failed for ${NETWORK_LABEL[network]}`,
+      detail: String((e as Error)?.message || e),
+    });
+  } finally {
+    generatingNow.delete(network);
   }
+  return settings;
+}
+
+/** Restamps one already-built file's dates to fall inside a window ending
+ *  "today" — deferred to send time (not baked in at generation time) so a
+ *  multi-day outage's catch-up sends carry correct, non-stale dates. Still
+ *  a deterministic script call, never agent judgment. */
+async function restampFile(network: Network, filePath: string, endDate: string, windowDays: number): Promise<void> {
+  const python = path.join(agentDir(network), ".venv", "bin", "python3");
+  const script = path.join(agentDir(network), "trend_batch.py");
+  await execFileAsync(python, [script, "--restamp", filePath, "--end", endDate, "--window-days", String(windowDays)]);
+}
+
+/** Sends one network's next upload: regenerates a fresh cycle first if the
+ *  current batch is exhausted (decision #8 — brand-new IDs, never a replay
+ *  of the first file), restamps that file's dates for today, then runs the
+ *  existing agent pipeline against it exactly as an ad-hoc request. Always
+ *  advances the cursor in `finally`, win or lose — a failed day's content
+ *  doesn't block tomorrow's, the same way a failed ad-hoc run doesn't block
+ *  the next one. */
+async function dispatchNextUpload(network: Network): Promise<void> {
+  if (sendingNow.has(network)) return;
+  sendingNow.add(network);
+  try {
+    let settings = getNetworkSettings(network);
+    if (settings.cadence === "off") return;
+    const cadence = settings.cadence;
+
+    if (!settings.batch || settings.batch.nextUploadIndex >= settings.batch.totalUploads) {
+      settings = await regenerateBatch(network, (settings.batch?.cycleNumber ?? 0) + 1);
+    }
+    if (!settings.batch) return; // generation failed; already alerted in regenerateBatch
+
+    const entry = settings.batch.files[settings.batch.nextUploadIndex];
+    const today = new Date().toISOString().slice(0, 10);
+    try {
+      await restampFile(network, entry.path, today, cadenceWindowDays(cadence));
+      await runIngestJob({
+        network,
+        dateRange: { start: today, end: today }, // display only — the file's own rows carry the real spread across the cadence window
+        requestor: "Mr. Roboto",
+        testMode: false,
+        cachedFile: entry.path,
+      });
+    } finally {
+      const fresh = getNetworkSettings(network);
+      if (fresh.batch) {
+        saveNetworkSettings(network, { ...fresh, batch: { ...fresh.batch, nextUploadIndex: fresh.batch.nextUploadIndex + 1 } });
+      }
+    }
+  } finally {
+    sendingNow.delete(network);
+  }
+}
+
+/** Scheduler entry point: each network fires independently off its own
+ *  cadence/trend/volume settings, guarded per-network so a 10-minute tick
+ *  re-evaluating the same firing day doesn't double-dispatch (persisted, so
+ *  a restart on the same day doesn't either). */
+export function maybeDispatchScheduled(now: Date): void {
+  for (const network of NETWORKS) {
+    const settings = getNetworkSettings(network);
+    if (settings.cadence === "off") continue;
+    if (settings.generatingSince || generatingNow.has(network) || sendingNow.has(network)) continue;
+    if (!isFiringDay(settings.cadence, now)) continue;
+    const key = `${settings.cadence}:${now.toISOString().slice(0, 10)}`;
+    if (key === settings.lastFiredKey) continue;
+    saveNetworkSettings(network, { ...settings, lastFiredKey: key });
+    void dispatchNextUpload(network);
+  }
+}
+
+/** Any network left "generating" after this long is presumed killed by a
+ *  restart/deploy, not actually in progress — called once at boot so the
+ *  settings UI never shows a permanently-stuck "Generating…" row. Mirrors
+ *  reconcileStaleRuns above. Batch generation is a fast deterministic
+ *  script, not an agent call, so the timeout here is much shorter. */
+const STALE_GENERATION_MS = 10 * 60 * 1000;
+export function reconcileStaleGenerations(): number {
+  let n = 0;
+  for (const network of NETWORKS) {
+    const settings = getNetworkSettings(network);
+    if (!settings.generatingSince) continue;
+    if (Date.now() - new Date(settings.generatingSince).getTime() < STALE_GENERATION_MS) continue;
+    saveNetworkSettings(network, { ...settings, generatingSince: null });
+    void alert({
+      key: `ingest-generate-stale:${network}`,
+      title: `Ingest-O-Matic batch generation for ${NETWORK_LABEL[network]} was interrupted`,
+      detail: "Left \"generating\" across a server restart/deploy, so it's been cleared rather than left stuck locked. If this network has no usable batch, saving its settings again will regenerate one.",
+    });
+    n++;
+  }
+  return n;
 }
