@@ -1,0 +1,7 @@
+{
+  "network": "home-services-2751",
+  "notAnswered": { "column": "Answered by Agent", "value": "0" },
+  "conversion": [
+    { "column": "Purchase", "value": "1" }
+  ]
+}

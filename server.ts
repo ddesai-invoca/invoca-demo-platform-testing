@@ -38,7 +38,7 @@ import { handleDemoApi, isAdmin } from "./engine/demoApi.ts";
 import { handleFeedbackApi } from "./engine/feedbackApi.ts";
 import { handleIngestApi } from "./engine/ingestApi.ts";
 import { materializeIngestAgents, requiredEnvVarNames, NETWORKS } from "./engine/ingestAgentPaths.ts";
-import { maybeDispatchScheduled, reconcileStaleRuns } from "./engine/ingestOrchestrator.ts";
+import { maybeDispatchScheduled, reconcileStaleRuns, reconcileStaleGenerations } from "./engine/ingestOrchestrator.ts";
 import { mailConfigured } from "./engine/mailer.ts";
 import { DATA_DIR, isPersistent } from "./engine/demoStore.ts";
 import { alert, alertSummary, type AlertLevel } from "./engine/alerts.ts";
@@ -630,6 +630,8 @@ const server = app.listen(PORT, () => {
   else console.log(`📞 Ingest-O-Matic: .venv ready (requests importable) for ${NETWORKS.join(", ")}.`);
   const staleCount = reconcileStaleRuns();
   if (staleCount) console.log(`📞 Ingest-O-Matic: marked ${staleCount} stuck "running" run(s) as failed (left over from a restart).`);
+  const staleGenCount = reconcileStaleGenerations();
+  if (staleGenCount) console.log(`📞 Ingest-O-Matic: cleared ${staleGenCount} network(s) stuck "generating" (left over from a restart).`);
   scheduleIngest();
 });
 

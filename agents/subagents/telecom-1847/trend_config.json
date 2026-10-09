@@ -1,0 +1,7 @@
+{
+  "network": "telecom-1847",
+  "notAnswered": { "column": "Call Not Answered by Agent", "value": "1" },
+  "conversion": [
+    { "column": "New Service Activation", "value": "1" }
+  ]
+}

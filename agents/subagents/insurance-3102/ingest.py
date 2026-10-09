@@ -1,6 +1,17 @@
 #!/usr/bin/env python3
 """
-Post iTelecom demo calls to the Invoca Call Ingestion API, network 1847.
+Post Best Coverage Policy (fictional insurance demo company) calls to the
+Invoca Call Ingestion API, network 3102.
+
+*** UNVERIFIED CUSTOM_DATA MAPPING -- READ BEFORE A FULL SEND ***
+network_config.env now has real credentials for network 3102. However, no
+real Custom Data Dictionary export for THIS network has been obtained yet
+-- custom_data_dictionary.csv is still a conservative guess (see its own
+header comment), built from field names shared by at least 3 of this
+project's other networks. The CUSTOM_DATA mapping below is correspondingly
+unverified. Run --dry-run and --test (3 real calls) before ever attempting
+a full send, and watch specifically for a rejected/unrecognized
+custom_data field name -- see AGENT_PROMPT.md's escalation list.
 
 Self-contained subagent package: everything this script needs (credentials,
 network/campaign IDs, endpoint, custom_data field mapping, send history)
@@ -8,13 +19,13 @@ lives inside this folder. It has no dependency on any other network's
 files, the root "Bulk Demo Calls" project, or any specific machine -- only
 on being handed a CSV and network access to invoca.net.
 
-Pass any "..._WITH_URLS_ALL.csv"-style file with an "ID name" and "Audio
-URL" column already filled in, and this script builds the request body and
+Pass any "..._WITH_URLS.csv"-style file with an "ID name" and "Audio URL"
+column already filled in, and this script builds the request body and
 sends it directly -- no separate "build upload file" step.
 
 The custom_data field mapping and campaign/network identity are specific to
-network 1847 on purpose (see AGENT_PROMPT.md for why a different network
-gets its own folder/script instead of a shared generic one).
+this one network on purpose -- a different network gets its own
+folder/script, never a shared generic one (see AGENT_PROMPT.md).
 
 State is recorded in state/ingest_state.json. external_call_unique_id must
 stay unique across this network FOREVER, so this file is the one and only
@@ -24,8 +35,8 @@ the same network.
 
 Usage
 -----
-    cd telecom-network-1847
-    python3 ingest.py --csv "/path/to/some_WITH_URLS_ALL.csv" --dry-run
+    cd insurance-network-3102
+    python3 ingest.py --csv "/path/to/some_WITH_URLS.csv" --dry-run
     python3 ingest.py --csv "..." --test
     python3 ingest.py --csv "..." --status
     python3 ingest.py --csv "..."
@@ -54,58 +65,64 @@ CONFIG = HERE / "network_config.env"
 
 LANGUAGE_CODE = "en-US"
 NETWORK_TZ = ZoneInfo("America/New_York")  # simplification: one TZ for all regions
-SEED = 20260921  # for ANI synthesis only; does not affect what's sent
+SEED = 20261006  # for ANI synthesis only; does not affect what's sent
 
 TIMEOUT = 120
 PAUSE = 0.35
 OK_CODES = {201, 202}
 
-# partner_name taken from network 1847's actual Custom Data Dictionary
-# export (custom_data_dictionary.csv in this folder), not guessed. If
-# Invoca adds a new field you need to send, look up its exact partner_name
-# in that file first -- do not invent a name, unmapped names get rejected
-# or silently dropped.
+# UNVERIFIED -- no real Custom Data Dictionary export for network 3102 has
+# been obtained yet (see custom_data_dictionary.csv's placeholder notice).
+# Every partner_name below is a guess based on fields shared by at least 3
+# of this project's other networks. Re-check each one against a real
+# export before the first full send and correct any that don't match.
+#
+# "Phone Line" is deliberately NOT sent -- no network in this project has
+# ever had a verified partner_name for it (same precedent as Law's "Phone
+# Line" omission).
 CUSTOM_DATA = {
     "Region": "Region",
-    "Location": "Location",
     "Agent": "agent",
-    "Amount": "Amount",
+    "Revenue": "revenue",
     "Marketing Source": "utm_source",
     "Marketing Medium": "utm_medium",
     "Marketing Campaign": "utm_campaign",
     "Marketing Search Terms": "utm_term",
+    "Landing page": "landing_page",
+    "Calling Page": "calling_page",
     "Google Click ID": "gclid",
     "Google GBRAID": "gbraid",
+    "Google WBRAID": "wbraid",
     "Google Ads Customer ID": "customer_id",
     "Google Analytics Session ID": "ga_session_id",
     "Google Analytics Client ID": "g_cid",
     "Google Analytics Measurement ID": "ga_measurement_id",
-    "Google WBRAID": "wbraid",
-    "Landing page": "landing_page",
-    "Calling Page": "calling_page",
 }
 
-# No signals by design: Signal AI is meant to detect these outcomes from the
-# audio itself (the transcripts were written to fire the voice-signal
-# phrases). Declaring them here would pre-load the answer.
+# No signals by design, same choice as every other network in this project:
+# Signal AI is meant to detect outcomes from the audio itself, so declaring
+# them here would pre-load the answer. This covers this network's own
+# "Call Type: New Policy Inquiry (Industry)" and "Enrollment Confirmation"
+# columns -- both ground truth for writing the demo transcripts, neither
+# sent as custom_data.
 INCLUDE_SIGNALS = False
 
-# Real area codes for every city seen across this network's CSVs so far.
-# If a new CSV has a city not in this table, the script falls back to a
-# generic "555" area code rather than failing -- fine for demo data, but
-# worth noting in your report back to the parent agent so the table can be
-# extended.
+# Real primary area code for every city in this network's template_calls.csv
+# (25 cities, see generate_insurance_calls.py's CITIES table). Falls back to
+# a generic "555" area code for an unrecognized city rather than failing --
+# fine for demo data, but worth flagging back to the parent agent so the
+# table can be extended.
 AREA_CODES = {
-    "Denver": "303", "Boulder": "303", "Broomfield": "720", "Longmont": "303",
-    "Lafayette": "720", "Louisville": "720", "Erie": "303", "Nederland": "303",
-    "Boston": "617", "Cambridge": "617", "Somerville": "617", "Newton": "617",
-    "Quincy": "617", "Brockton": "508", "Worcester": "508", "Providence": "401",
-    "Springfield": "413", "Agawam": "413", "Chicopee": "413", "Holyoke": "413",
-    "Ludlow": "413", "Westfield": "413", "Hartford": "860", "Enfield": "860",
-    "Camden": "856", "Cherry Hill": "856", "Marlton": "856", "Moorestown": "856",
-    "Mount Laurel": "856", "Voorhees": "856", "Trenton": "609", "Philadelphia": "215",
-    "Richmond": "804", "Henrico": "804", "Petersburg": "804", "Chesapeake": "757",
-    "Raleigh": "919", "Cary": "919", "Durham": "919", "Chapel Hill": "919",
+    "New York": "212", "Philadelphia": "215", "Boston": "617",
+    "Baltimore": "410", "Pittsburgh": "412",
+    "Los Angeles": "213", "San Francisco": "415", "Seattle": "206",
+    "Portland": "503", "San Diego": "619",
+    "Chicago": "312", "Minneapolis": "612", "Detroit": "313",
+    "Milwaukee": "414", "Cleveland": "216",
+    "Atlanta": "404", "Miami": "305", "Houston": "713",
+    "Dallas": "214", "Charlotte": "704", "New Orleans": "504",
+    "Denver": "303", "Kansas City": "816", "St. Louis": "314",
+    "Oklahoma City": "405", "Omaha": "402",
 }
 
 EXCEL_ERRORS = {"#NAME?", "#REF!", "#VALUE!", "#N/A", "#DIV/0!", "#NULL!"}
@@ -121,8 +138,8 @@ def clean(v: str) -> str:
 
 
 def to_iso(stamp: str) -> str:
-    """CSV format: 8/7/26 1:41 -> ISO 8601 with offset."""
-    dt = datetime.strptime(stamp.strip(), "%m/%d/%y %H:%M").replace(tzinfo=NETWORK_TZ)
+    """CSV format: 2026-09-02 14:35:28 -> ISO 8601 with offset."""
+    dt = datetime.strptime(stamp.strip(), "%Y-%m-%d %H:%M:%S").replace(tzinfo=NETWORK_TZ)
     return dt.isoformat(timespec="milliseconds")
 
 
@@ -136,9 +153,11 @@ def to_e164(number: str) -> str:
 
 
 def ani(row: dict) -> str:
-    """Real ANI if the CSV has one; otherwise synthesize from city area code.
-    Synthetic demo data has no real caller number, so synthesis is the
-    expected path for this network's CSVs."""
+    """Real ANI if the CSV has one; otherwise synthesize from the caller's
+    City + a real area code. "Called Phone Number" on this network is a
+    single fixed corporate contact-center number for every row (855-549-0033,
+    same pattern as Finance's single fixed number), so it's the CALLING
+    number, not the destination, that needs per-city synthesis here."""
     global _ani_rnd
     for col in ("Calling Phone Number", "calling_phone_number", "ANI"):
         if row.get(col, "").strip():
@@ -155,13 +174,13 @@ def ani(row: dict) -> str:
 
 
 def outcome_of(row: dict) -> str:
-    if row.get("Call Not Answered by Agent") == "1":
+    if row.get("Call Not Answered by Agent", "").strip() == "1":
         return "unanswered"
-    if row.get("New Sales Call") != "1":
-        return "nonsale"
-    if row.get("Serviceable area") != "1":
-        return "not_serviceable"
-    return "activated" if row.get("New Service Activation") == "1" else "no_activation"
+    if row.get("Enrollment Confirmation", "").strip() == "1":
+        return "enrolled"
+    if row.get("Call Type: New Policy Inquiry (Industry)", "").strip() == "1":
+        return "new_inquiry"
+    return "other"
 
 
 def load_config() -> dict[str, str]:
@@ -245,17 +264,17 @@ def validate_csv(rows: list[dict], csv_path: Path) -> None:
             bad_dates.append(r.get("ID name", "?"))
     if bad_dates:
         sys.exit(f"{len(bad_dates)} row(s) have a 'Call Start Time' that isn't in "
-                  f"M/D/YY H:MM format, e.g. row(s): {bad_dates[:10]}. Fix the source "
-                  f"CSV's date format upstream rather than reformatting blindly here.")
+                  f"YYYY-MM-DD HH:MM:SS format, e.g. row(s): {bad_dates[:10]}. Fix the "
+                  f"source CSV's date format upstream rather than reformatting blindly here.")
 
 
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--csv", help="path to a *_WITH_URLS_ALL.csv for network 1847 (not needed with --status)")
+    ap.add_argument("--csv", help="path to a *_WITH_URLS.csv for this network (not needed with --status)")
     ap.add_argument("--dry-run", action="store_true", help="print a sample body, send nothing")
     ap.add_argument("--test", action="store_true",
-                    help="send 3 diverse calls (a sale, a non-sale, an unanswered) and stop")
+                    help="send 3 diverse calls (unanswered, enrolled, other) and stop")
     ap.add_argument("--status", action="store_true", help="summarise everything ever sent to this network")
     ap.add_argument("--only", nargs="*", metavar="ID", help="send only these call IDs")
     ap.add_argument("--limit", type=int, help="send at most N calls")
@@ -297,7 +316,7 @@ def main() -> int:
         for r in rows:
             cid = r["ID name"].strip()
             o = outcome_of(r)
-            key = "unanswered" if o == "unanswered" else ("activated" if o == "activated" else "other")
+            key = "unanswered" if o == "unanswered" else ("enrolled" if o == "enrolled" else "other")
             if key not in seen and cid not in accepted:
                 seen.add(key)
                 picks.append(r)

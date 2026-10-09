@@ -5,17 +5,28 @@ import { Link } from "react-router-dom";
    IngestOMatic — /ingest-o-matic
    -----------------------------------------------------------------------------
    Admin tool: schedule and log the bulk synthetic-call ingestion that seeds
-   Invoca demo networks (Telecom/1847, Healthcare/2160). Every /api/ingest/*
-   route is admin-gated server-side; this screen assumes it's already reachable
-   only via the hamburger menu's admin-only row (see LaunchMenu.tsx).
+   Invoca demo networks. Every /api/ingest/* route is admin-gated server-side;
+   this screen assumes it's already reachable only via the hamburger menu's
+   admin-only row (see LaunchMenu.tsx).
 
-   Plain useState/useEffect data-fetching, no context — matches FeedbackBoard's
-   approach; this screen isn't referenced from anywhere else in the app.
+   Phase 2: each network runs its own independent cadence/trend/volume,
+   replacing the single global schedule Phase 1 had. Plain useState/useEffect
+   data-fetching, no context — matches FeedbackBoard's approach; this screen
+   isn't referenced from anywhere else in the app.
    ============================================================================= */
 
-type Network = "telecom-1847" | "healthcare-2160";
-type Cadence = "monthly" | "biweekly" | "weekly" | "daily";
+type Network =
+  | "telecom-1847"
+  | "healthcare-2160"
+  | "law-3062"
+  | "finance-1752"
+  | "insurance-3102"
+  | "home-services-2751";
+type Cadence = "monthly" | "biweekly" | "weekly" | "daily" | "off";
+type Trend = "gradual-increase" | "hockey-stick" | "random" | "answered-recovery";
+type TrendPeriod = "month" | "3-months" | "6-months";
 type RunStatus = "running" | "done" | "partial" | "failed";
+type SettingsAction = "noop" | "pause" | "resume" | "regenerate";
 
 interface ErrorDetail { code: string; count: number; reason: string; explanation: string; remediation: string }
 interface RunRecord {
@@ -25,17 +36,54 @@ interface RunRecord {
   testMode: boolean; callsIngested: number; errors: number; errorDetails: ErrorDetail[]; creditsUsedUsd: number | null;
 }
 interface Totals { callsIngested: number; creditsUsedUsd: number; errors: number }
-interface Schedule { cadence: Cadence; updatedAt: string; updatedBy: { email: string; name: string } }
+
+interface BatchState {
+  totalUploads: number;
+  nextUploadIndex: number;
+  cycleNumber: number;
+}
+interface NetworkSettings {
+  network: Network;
+  cadence: Cadence;
+  lastActiveCadence: Exclude<Cadence, "off"> | null;
+  trend: Trend;
+  trendPeriod: TrendPeriod;
+  callsPerUpload: number;
+  batch: BatchState | null;
+  generatingSince: string | null;
+  updatedAt: string;
+  updatedBy: { email: string; name: string };
+  notConfigured: boolean;
+}
 
 const NETWORK_LABEL: Record<Network, string> = {
   "telecom-1847": "Telecom (1847)",
   "healthcare-2160": "Healthcare (2160)",
+  "law-3062": "Law (3062)",
+  "finance-1752": "Finance (1752)",
+  "insurance-3102": "Insurance (3102)",
+  "home-services-2751": "Home Services (2751)",
 };
 const CADENCE_LABEL: Record<Cadence, string> = {
-  monthly: "Monthly — 1st of the month, previous calendar month",
-  biweekly: "Biweekly — 1st and 15th, previous half-month",
-  weekly: "Weekly — 1st/8th/22nd/28th, preceding ~7 days",
-  daily: "Daily — every night, previous calendar day",
+  off: "Off",
+  daily: "Daily",
+  weekly: "Weekly",
+  biweekly: "Bi-weekly",
+  monthly: "Monthly",
+};
+const TREND_LABEL: Record<Trend, string> = {
+  "gradual-increase": "Gradual conversion increase",
+  "hockey-stick": "Conversion hockey stick",
+  random: "Random",
+  "answered-recovery": "Sharp decrease in unanswered calls",
+};
+const TREND_PERIOD_LABEL: Record<TrendPeriod, string> = {
+  month: "1 month",
+  "3-months": "3 months",
+  "6-months": "6 months",
+};
+const FIRINGS_PER_YEAR: Record<Exclude<Cadence, "off">, number> = {
+  daily: 365, weekly: 52, biweekly: 26, monthly: 12,
 };
 
 function money(n: number | null): string {
@@ -54,18 +102,183 @@ function requestorName(r: RunRecord["requestor"]): string {
 }
 function todayStr(): string { return new Date().toISOString().slice(0, 10); }
 
+interface Draft { cadence: Cadence; trend: Trend; trendPeriod: TrendPeriod; callsPerUpload: number }
+function draftOf(s: NetworkSettings): Draft {
+  return { cadence: s.cadence, trend: s.trend, trendPeriod: s.trendPeriod, callsPerUpload: s.callsPerUpload };
+}
+function draftEquals(a: Draft, b: Draft): boolean {
+  return a.cadence === b.cadence && a.trend === b.trend && a.trendPeriod === b.trendPeriod && a.callsPerUpload === b.callsPerUpload;
+}
+
+function ConfirmDialog({ message, busy, onCancel, onConfirm }: {
+  message: string; busy: boolean; onCancel: () => void; onConfirm: () => void;
+}) {
+  return (
+    <div className="ing-dialog-overlay" role="dialog" aria-modal="true">
+      <div className="ing-dialog">
+        <p className="ing-dialog-msg">{message}</p>
+        <div className="ing-dialog-actions">
+          <button className="ing-secondary" disabled={busy} onClick={onCancel}>Cancel</button>
+          <button className="ing-primary" disabled={busy} onClick={onConfirm}>{busy ? "Saving…" : "Confirm"}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function NetworkRow({
+  settings, cadences, trends, trendPeriods, callsPerUploadMax, expanded, onToggle, onSaved,
+}: {
+  settings: NetworkSettings;
+  cadences: Cadence[]; trends: Trend[]; trendPeriods: TrendPeriod[]; callsPerUploadMax: number;
+  expanded: boolean; onToggle: () => void; onSaved: () => void;
+}) {
+  const [draft, setDraft] = useState<Draft>(() => draftOf(settings));
+  // Re-sync the draft from the server only when a save actually landed
+  // (updatedAt moved) — never while the admin is mid-edit on this row.
+  useEffect(() => { setDraft(draftOf(settings)); }, [settings.updatedAt]);
+
+  const [confirming, setConfirming] = useState<{ action: SettingsAction; message: string } | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [toast, setToast] = useState("");
+
+  const locked = !!settings.generatingSince;
+  const dirty = !draftEquals(draft, draftOf(settings));
+  const annual = draft.cadence === "off" ? null : FIRINGS_PER_YEAR[draft.cadence] * draft.callsPerUpload;
+
+  async function handleSaveClick() {
+    setToast("");
+    try {
+      const res = await fetch(`/api/ingest/networks/${settings.network}/preview`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(draft),
+      });
+      const d = await res.json();
+      if (!res.ok) throw new Error(d?.error || "Could not preview this change.");
+      if (d.action === "noop") { setToast("Nothing changed."); return; }
+      setConfirming({ action: d.action, message: d.message });
+    } catch (e: any) {
+      setToast(e?.message || "Could not preview this change.");
+    }
+  }
+
+  async function handleConfirm() {
+    if (!confirming) return;
+    setSaving(true);
+    try {
+      const res = await fetch(`/api/ingest/networks/${settings.network}/settings`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(draft),
+      });
+      const d = await res.json();
+      if (!res.ok) throw new Error(d?.error || "Could not save settings.");
+      setConfirming(null);
+      onSaved();
+    } catch (e: any) {
+      setToast(e?.message || "Could not save settings.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="ing-net-row">
+      <button className="ing-net-head" onClick={onToggle} type="button">
+        <span className="material-icons ing-net-chevron">{expanded ? "expand_less" : "expand_more"}</span>
+        <span className="ing-net-name">{NETWORK_LABEL[settings.network]}</span>
+        <span className={"ing-net-cadence" + (settings.cadence === "off" ? " ing-net-cadence-off" : "")}>
+          {CADENCE_LABEL[settings.cadence]}
+        </span>
+        {settings.notConfigured && <span className="ing-net-tag ing-net-tag-warn">not configured</span>}
+        {locked && <span className="ing-net-tag ing-net-tag-busy">Generating…</span>}
+      </button>
+
+      {expanded && (
+        <div className="ing-net-body">
+          {settings.notConfigured && (
+            <p className="ing-hint ing-net-warn-hint">
+              This network's Invoca credentials aren't set yet — cadence and trend can still be configured, but
+              scheduled uploads will fail until that's fixed.
+            </p>
+          )}
+          {toast && <p className="ing-error">{toast}</p>}
+
+          <fieldset className="ing-net-fields" disabled={locked}>
+            <label className="ing-field">
+              Cadence
+              <select value={draft.cadence} onChange={(e) => setDraft((d) => ({ ...d, cadence: e.target.value as Cadence }))}>
+                {cadences.map((c) => <option key={c} value={c}>{CADENCE_LABEL[c]}</option>)}
+              </select>
+            </label>
+            <label className="ing-field">
+              Trend
+              <select value={draft.trend} onChange={(e) => setDraft((d) => ({ ...d, trend: e.target.value as Trend }))}>
+                {trends.map((t) => <option key={t} value={t}>{TREND_LABEL[t]}</option>)}
+              </select>
+            </label>
+            <label className="ing-field">
+              Trend period
+              <select value={draft.trendPeriod} onChange={(e) => setDraft((d) => ({ ...d, trendPeriod: e.target.value as TrendPeriod }))}>
+                {trendPeriods.map((tp) => <option key={tp} value={tp}>{TREND_PERIOD_LABEL[tp]}</option>)}
+              </select>
+            </label>
+            <label className="ing-field">
+              Calls per upload
+              <input
+                type="number" min={1} max={callsPerUploadMax} value={draft.callsPerUpload}
+                onChange={(e) => setDraft((d) => ({ ...d, callsPerUpload: Math.max(1, Number(e.target.value) || 1) }))}
+              />
+            </label>
+          </fieldset>
+
+          <p className="ing-hint">
+            {annual === null
+              ? "This network will not upload automatically while cadence is Off."
+              : `≈ ${annual.toLocaleString()} calls/year at this cadence and volume.`}
+          </p>
+          {settings.batch && (
+            <p className="ing-hint">
+              Upload {Math.min(settings.batch.nextUploadIndex + 1, settings.batch.totalUploads)} of {settings.batch.totalUploads}
+              {settings.batch.cycleNumber > 1 ? ` (cycle ${settings.batch.cycleNumber})` : ""}.
+            </p>
+          )}
+
+          <button className="ing-primary" disabled={!dirty || locked} onClick={() => void handleSaveClick()}>
+            Save settings
+          </button>
+        </div>
+      )}
+
+      {confirming && (
+        <ConfirmDialog
+          message={confirming.message}
+          busy={saving}
+          onCancel={() => setConfirming(null)}
+          onConfirm={() => void handleConfirm()}
+        />
+      )}
+    </div>
+  );
+}
+
 export function IngestOMatic() {
   const [runs, setRuns] = useState<RunRecord[]>([]);
   const [totals, setTotals] = useState<Totals>({ callsIngested: 0, creditsUsedUsd: 0, errors: 0 });
-  const [schedule, setSchedule] = useState<Schedule | null>(null);
+
+  const [networks, setNetworks] = useState<NetworkSettings[]>([]);
   const [cadences, setCadences] = useState<Cadence[]>([]);
+  const [trends, setTrends] = useState<Trend[]>([]);
+  const [trendPeriods, setTrendPeriods] = useState<TrendPeriod[]>([]);
+  const [callsPerUploadMax, setCallsPerUploadMax] = useState(2000);
+  const [legacyCadenceValue, setLegacyCadenceValue] = useState<string | null>(null);
+  const [expandedNetwork, setExpandedNetwork] = useState<Network | null>(null);
+
   const [errors, setErrors] = useState<(ErrorDetail & { date: string; network: Network })[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState("");
-  const [panel, setPanel] = useState<"schedule" | "add" | "errors" | null>(null);
-
-  const [cadenceChoice, setCadenceChoice] = useState<Cadence>("monthly");
-  const [savingSchedule, setSavingSchedule] = useState(false);
+  const [panel, setPanel] = useState<"add" | "errors" | null>(null);
 
   const [network, setNetwork] = useState<Network>("telecom-1847");
   const [start, setStart] = useState("");
@@ -77,19 +290,22 @@ export function IngestOMatic() {
 
   const load = useCallback(async () => {
     try {
-      const [runsRes, scheduleRes] = await Promise.all([
+      const [runsRes, networksRes] = await Promise.all([
         fetch("/api/ingest/runs"),
-        fetch("/api/ingest/schedule"),
+        fetch("/api/ingest/networks"),
       ]);
       const runsData = await runsRes.json();
       if (!runsRes.ok) throw new Error(runsData?.error || "Could not load the ingestion log.");
-      const scheduleData = await scheduleRes.json();
-      if (!scheduleRes.ok) throw new Error(scheduleData?.error || "Could not load the schedule.");
+      const networksData = await networksRes.json();
+      if (!networksRes.ok) throw new Error(networksData?.error || "Could not load network settings.");
       setRuns(runsData.runs ?? []);
       setTotals(runsData.totals ?? { callsIngested: 0, creditsUsedUsd: 0, errors: 0 });
-      setSchedule(scheduleData.schedule ?? null);
-      setCadences(scheduleData.cadences ?? []);
-      if (scheduleData.schedule?.cadence) setCadenceChoice(scheduleData.schedule.cadence);
+      setNetworks(networksData.networks ?? []);
+      setCadences(networksData.cadences ?? []);
+      setTrends(networksData.trends ?? []);
+      setTrendPeriods(networksData.trendPeriods ?? []);
+      if (networksData.callsPerUploadMax) setCallsPerUploadMax(networksData.callsPerUploadMax);
+      setLegacyCadenceValue(networksData.legacyCadence ?? null);
     } catch (e: any) {
       setLoadError(e?.message || "Could not load Ingest-O-Matic.");
     } finally {
@@ -99,37 +315,19 @@ export function IngestOMatic() {
 
   useEffect(() => { void load(); }, [load]);
 
-  // Poll while anything is in flight — the only state that can change on its own.
+  // Poll while anything is in flight — a run, or a network mid-generation.
   useEffect(() => {
-    if (!runs.some((r) => r.status === "running")) return;
-    const t = setInterval(() => void load(), 5000);
+    const anyRunning = runs.some((r) => r.status === "running");
+    const anyGenerating = networks.some((n) => !!n.generatingSince);
+    if (!anyRunning && !anyGenerating) return;
+    const t = setInterval(() => void load(), 4000);
     return () => clearInterval(t);
-  }, [runs, load]);
+  }, [runs, networks, load]);
 
   useEffect(() => {
     if (panel !== "errors") return;
     fetch("/api/ingest/errors").then((r) => r.json()).then((d) => setErrors(d.errors ?? [])).catch(() => {});
   }, [panel]);
-
-  async function saveSchedule() {
-    setSavingSchedule(true);
-    try {
-      const res = await fetch("/api/ingest/schedule", {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ cadence: cadenceChoice }),
-      });
-      const d = await res.json();
-      if (!res.ok) throw new Error(d?.error || "Could not save the schedule.");
-      setSchedule(d.schedule);
-      setToast("Schedule saved.");
-      setTimeout(() => setToast(""), 4000);
-    } catch (e: any) {
-      setToast(e?.message || "Could not save the schedule.");
-    } finally {
-      setSavingSchedule(false);
-    }
-  }
 
   async function submitAdhoc(e: React.FormEvent) {
     e.preventDefault();
@@ -184,6 +382,31 @@ export function IngestOMatic() {
           </div>
         </div>
 
+        <div className="ing-net-card">
+          <h2 className="ing-h2">Network settings</h2>
+          {legacyCadenceValue && (
+            <p className="ing-hint ing-net-legacy">
+              Previously shared across every network: <b>{legacyCadenceValue}</b>. Each network below now has its own
+              cadence, trend, and volume — none were carried forward automatically.
+            </p>
+          )}
+          <div className="ing-net-list">
+            {networks.map((n) => (
+              <NetworkRow
+                key={n.network}
+                settings={n}
+                cadences={cadences}
+                trends={trends}
+                trendPeriods={trendPeriods}
+                callsPerUploadMax={callsPerUploadMax}
+                expanded={expandedNetwork === n.network}
+                onToggle={() => setExpandedNetwork(expandedNetwork === n.network ? null : n.network)}
+                onSaved={() => void load()}
+              />
+            ))}
+          </div>
+        </div>
+
         <div className="ing-body">
           <div className="ing-main">
             <h2 className="ing-h2">Ingestion log</h2>
@@ -229,30 +452,6 @@ export function IngestOMatic() {
           </div>
 
           <div className="ing-side">
-            <button className={"ing-side-btn" + (panel === "schedule" ? " ing-side-btn-on" : "")}
-              onClick={() => setPanel(panel === "schedule" ? null : "schedule")}>
-              <span className="material-icons">event_repeat</span> Adjust schedule
-            </button>
-            {panel === "schedule" && (
-              <div className="ing-panel">
-                {schedule && (
-                  <p className="ing-hint">
-                    Currently <b>{CADENCE_LABEL[schedule.cadence]}</b>.
-                  </p>
-                )}
-                {cadences.map((c) => (
-                  <label key={c} className="ing-radio">
-                    <input type="radio" name="cadence" checked={cadenceChoice === c}
-                      onChange={() => setCadenceChoice(c)} />
-                    {CADENCE_LABEL[c]}
-                  </label>
-                ))}
-                <button className="ing-primary" disabled={savingSchedule} onClick={() => void saveSchedule()}>
-                  {savingSchedule ? "Saving…" : "Save schedule"}
-                </button>
-              </div>
-            )}
-
             <button className={"ing-side-btn" + (panel === "add" ? " ing-side-btn-on" : "")}
               onClick={() => setPanel(panel === "add" ? null : "add")}>
               <span className="material-icons">add_call</span> Add calls
@@ -264,6 +463,10 @@ export function IngestOMatic() {
                   <select value={network} onChange={(e) => setNetwork(e.target.value as Network)}>
                     <option value="telecom-1847">{NETWORK_LABEL["telecom-1847"]}</option>
                     <option value="healthcare-2160">{NETWORK_LABEL["healthcare-2160"]}</option>
+                    <option value="law-3062">{NETWORK_LABEL["law-3062"]}</option>
+                    <option value="finance-1752">{NETWORK_LABEL["finance-1752"]}</option>
+                    <option value="insurance-3102">{NETWORK_LABEL["insurance-3102"]}</option>
+                    <option value="home-services-2751">{NETWORK_LABEL["home-services-2751"]}</option>
                   </select>
                 </label>
                 <label className="ing-field">

@@ -1,0 +1,8 @@
+{
+  "network": "law-3062",
+  "notAnswered": { "column": "Not Answered by Agent", "value": "1" },
+  "conversion": [
+    { "column": "Appointment Booked", "value": "1" },
+    { "column": "Wanted Case", "value": "1" }
+  ]
+}

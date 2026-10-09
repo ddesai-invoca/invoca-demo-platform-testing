@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """
-Post iTelecom demo calls to the Invoca Call Ingestion API, network 1847.
+Post McCarty Hyatt (law firm) demo calls to the Invoca Call Ingestion API,
+network 3062.
 
 Self-contained subagent package: everything this script needs (credentials,
 network/campaign IDs, endpoint, custom_data field mapping, send history)
@@ -8,13 +9,13 @@ lives inside this folder. It has no dependency on any other network's
 files, the root "Bulk Demo Calls" project, or any specific machine -- only
 on being handed a CSV and network access to invoca.net.
 
-Pass any "..._WITH_URLS_ALL.csv"-style file with an "ID name" and "Audio
-URL" column already filled in, and this script builds the request body and
+Pass any "..._WITH_URLS.csv"-style file with an "ID name" and "Audio URL"
+column already filled in, and this script builds the request body and
 sends it directly -- no separate "build upload file" step.
 
 The custom_data field mapping and campaign/network identity are specific to
-network 1847 on purpose (see AGENT_PROMPT.md for why a different network
-gets its own folder/script instead of a shared generic one).
+network 3062 on purpose -- a different network gets its own folder/script,
+never a shared generic one (see AGENT_PROMPT.md).
 
 State is recorded in state/ingest_state.json. external_call_unique_id must
 stay unique across this network FOREVER, so this file is the one and only
@@ -24,8 +25,8 @@ the same network.
 
 Usage
 -----
-    cd telecom-network-1847
-    python3 ingest.py --csv "/path/to/some_WITH_URLS_ALL.csv" --dry-run
+    cd law-3062
+    python3 ingest.py --csv "/path/to/some_WITH_URLS.csv" --dry-run
     python3 ingest.py --csv "..." --test
     python3 ingest.py --csv "..." --status
     python3 ingest.py --csv "..."
@@ -54,58 +55,51 @@ CONFIG = HERE / "network_config.env"
 
 LANGUAGE_CODE = "en-US"
 NETWORK_TZ = ZoneInfo("America/New_York")  # simplification: one TZ for all regions
-SEED = 20260921  # for ANI synthesis only; does not affect what's sent
+SEED = 20261001  # for ANI synthesis only; does not affect what's sent
 
 TIMEOUT = 120
 PAUSE = 0.35
 OK_CODES = {201, 202}
 
-# partner_name taken from network 1847's actual Custom Data Dictionary
+# partner_name taken from network 3062's actual Custom Data Dictionary
 # export (custom_data_dictionary.csv in this folder), not guessed. If
 # Invoca adds a new field you need to send, look up its exact partner_name
-# in that file first -- do not invent a name, unmapped names get rejected
-# or silently dropped.
+# in that file first -- do not invent a name.
+#
+# "Phone Line" has no matching partner_name in that export, so it is
+# deliberately NOT sent -- omit a column rather than guess a name for it.
 CUSTOM_DATA = {
     "Region": "Region",
     "Location": "Location",
     "Agent": "agent",
-    "Amount": "Amount",
     "Marketing Source": "utm_source",
     "Marketing Medium": "utm_medium",
     "Marketing Campaign": "utm_campaign",
     "Marketing Search Terms": "utm_term",
+    "Landing page": "landing_page",
+    "Calling Page": "calling_page",
     "Google Click ID": "gclid",
     "Google GBRAID": "gbraid",
+    "Google WBRAID": "wbraid",
     "Google Ads Customer ID": "customer_id",
     "Google Analytics Session ID": "ga_session_id",
     "Google Analytics Client ID": "g_cid",
     "Google Analytics Measurement ID": "ga_measurement_id",
-    "Google WBRAID": "wbraid",
-    "Landing page": "landing_page",
-    "Calling Page": "calling_page",
 }
 
-# No signals by design: Signal AI is meant to detect these outcomes from the
-# audio itself (the transcripts were written to fire the voice-signal
-# phrases). Declaring them here would pre-load the answer.
+# No signals by design, same choice as networks 1847 and 2160: Signal AI is
+# meant to detect outcomes from the audio itself.
 INCLUDE_SIGNALS = False
 
 # Real area codes for every city seen across this network's CSVs so far.
-# If a new CSV has a city not in this table, the script falls back to a
-# generic "555" area code rather than failing -- fine for demo data, but
-# worth noting in your report back to the parent agent so the table can be
-# extended.
+# Falls back to a generic "555" area code for an unrecognized city rather
+# than failing -- fine for demo data, but worth flagging back to the
+# parent agent so the table can be extended.
 AREA_CODES = {
-    "Denver": "303", "Boulder": "303", "Broomfield": "720", "Longmont": "303",
-    "Lafayette": "720", "Louisville": "720", "Erie": "303", "Nederland": "303",
-    "Boston": "617", "Cambridge": "617", "Somerville": "617", "Newton": "617",
-    "Quincy": "617", "Brockton": "508", "Worcester": "508", "Providence": "401",
-    "Springfield": "413", "Agawam": "413", "Chicopee": "413", "Holyoke": "413",
-    "Ludlow": "413", "Westfield": "413", "Hartford": "860", "Enfield": "860",
-    "Camden": "856", "Cherry Hill": "856", "Marlton": "856", "Moorestown": "856",
-    "Mount Laurel": "856", "Voorhees": "856", "Trenton": "609", "Philadelphia": "215",
-    "Richmond": "804", "Henrico": "804", "Petersburg": "804", "Chesapeake": "757",
-    "Raleigh": "919", "Cary": "919", "Durham": "919", "Chapel Hill": "919",
+    "Richmond": "804", "Trenton": "609", "Cherry Hill": "856",
+    "Philadelphia": "215", "Camden": "856", "Newark": "973",
+    "Wilmington": "302", "Baltimore": "410", "Washington": "202",
+    "Norfolk": "757", "Virginia Beach": "757", "Atlantic City": "609",
 }
 
 EXCEL_ERRORS = {"#NAME?", "#REF!", "#VALUE!", "#N/A", "#DIV/0!", "#NULL!"}
@@ -121,8 +115,8 @@ def clean(v: str) -> str:
 
 
 def to_iso(stamp: str) -> str:
-    """CSV format: 8/7/26 1:41 -> ISO 8601 with offset."""
-    dt = datetime.strptime(stamp.strip(), "%m/%d/%y %H:%M").replace(tzinfo=NETWORK_TZ)
+    """CSV format: 2026-08-02 14:35:28 -> ISO 8601 with offset."""
+    dt = datetime.strptime(stamp.strip(), "%Y-%m-%d %H:%M:%S").replace(tzinfo=NETWORK_TZ)
     return dt.isoformat(timespec="milliseconds")
 
 
@@ -154,14 +148,41 @@ def ani(row: dict) -> str:
     return f"{ac}555{last4}"
 
 
+def disposition(row: dict) -> str:
+    """Derived field -> custom_data 'disposition', a real Category field
+    on network 3062 whose allowed values are: qualified_lead,
+    existing_customer, existing_customer_sales, no_info, wrong_number,
+    spam_drop (per custom_data_dictionary.csv). Not a single CSV column --
+    computed from this network's three boolean 0/1 flags.
+
+    Verified against all 499 template rows that this hierarchy is
+    unambiguous (no row has "Wanted Case"=1 without also having "Lead"=1,
+    and no row has "Appointment Booked"=1 without "Wanted Case"=1 too):
+      - Not Answered by Agent=1 -> "no_info" (never connected to an agent)
+      - Wanted Case=1 (covers Appointment Booked=1 too)  -> "qualified_lead"
+      - Lead=1 alone, or no flags set -> "no_info" (an inquiry was logged,
+        but nothing in the source CSV distinguishes it from an unqualified
+        one, so the honest value is "no info gathered toward a case" --
+        never invent "existing_customer"/"wrong_number"/"spam_drop", none
+        of which anything in this CSV actually indicates).
+    """
+    if row.get("Not Answered by Agent", "").strip() == "1":
+        return "no_info"
+    if row.get("Wanted Case", "").strip() == "1":
+        return "qualified_lead"
+    return "no_info"
+
+
 def outcome_of(row: dict) -> str:
-    if row.get("Call Not Answered by Agent") == "1":
+    if row.get("Not Answered by Agent") == "1":
         return "unanswered"
-    if row.get("New Sales Call") != "1":
-        return "nonsale"
-    if row.get("Serviceable area") != "1":
-        return "not_serviceable"
-    return "activated" if row.get("New Service Activation") == "1" else "no_activation"
+    if row.get("Appointment Booked") == "1":
+        return "appointment_booked"
+    if row.get("Wanted Case") == "1":
+        return "wanted_case"
+    if row.get("Lead") == "1":
+        return "lead"
+    return "other"
 
 
 def load_config() -> dict[str, str]:
@@ -209,6 +230,7 @@ def build_body(row: dict, campaign_id: str) -> dict:
         for col, partner in CUSTOM_DATA.items()
         if clean(row.get(col, ""))
     ]
+    custom_data.append({"name": "disposition", "value": disposition(row)})
     if custom_data:
         body["custom_data"] = custom_data
     if INCLUDE_SIGNALS:
@@ -245,17 +267,17 @@ def validate_csv(rows: list[dict], csv_path: Path) -> None:
             bad_dates.append(r.get("ID name", "?"))
     if bad_dates:
         sys.exit(f"{len(bad_dates)} row(s) have a 'Call Start Time' that isn't in "
-                  f"M/D/YY H:MM format, e.g. row(s): {bad_dates[:10]}. Fix the source "
-                  f"CSV's date format upstream rather than reformatting blindly here.")
+                  f"YYYY-MM-DD HH:MM:SS format, e.g. row(s): {bad_dates[:10]}. Fix the "
+                  f"source CSV's date format upstream rather than reformatting blindly here.")
 
 
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--csv", help="path to a *_WITH_URLS_ALL.csv for network 1847 (not needed with --status)")
+    ap.add_argument("--csv", help="path to a *_WITH_URLS.csv for network 3062 (not needed with --status)")
     ap.add_argument("--dry-run", action="store_true", help="print a sample body, send nothing")
     ap.add_argument("--test", action="store_true",
-                    help="send 3 diverse calls (a sale, a non-sale, an unanswered) and stop")
+                    help="send 3 diverse calls (unanswered, appointment booked, other) and stop")
     ap.add_argument("--status", action="store_true", help="summarise everything ever sent to this network")
     ap.add_argument("--only", nargs="*", metavar="ID", help="send only these call IDs")
     ap.add_argument("--limit", type=int, help="send at most N calls")
@@ -297,7 +319,7 @@ def main() -> int:
         for r in rows:
             cid = r["ID name"].strip()
             o = outcome_of(r)
-            key = "unanswered" if o == "unanswered" else ("activated" if o == "activated" else "other")
+            key = "unanswered" if o == "unanswered" else ("booked" if o == "appointment_booked" else "other")
             if key not in seen and cid not in accepted:
                 seen.add(key)
                 picks.append(r)

@@ -28,12 +28,29 @@ import { DATA_DIR } from "./demoStore.ts";
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
 const REPO = path.resolve(ROOT, "..");
 
-export type Network = "telecom-1847" | "healthcare-2160";
-export const NETWORKS: Network[] = ["telecom-1847", "healthcare-2160"];
+export type Network =
+  | "telecom-1847"
+  | "healthcare-2160"
+  | "law-3062"
+  | "finance-1752"
+  | "insurance-3102"
+  | "home-services-2751";
+export const NETWORKS: Network[] = [
+  "telecom-1847",
+  "healthcare-2160",
+  "law-3062",
+  "finance-1752",
+  "insurance-3102",
+  "home-services-2751",
+];
 
 export const NETWORK_LABEL: Record<Network, string> = {
   "telecom-1847": "Telecom (network 1847)",
   "healthcare-2160": "Healthcare (network 2160)",
+  "law-3062": "Law (network 3062)",
+  "finance-1752": "Finance (network 1752)",
+  "insurance-3102": "Insurance (network 3102)",
+  "home-services-2751": "Home Services (network 2751)",
 };
 
 /** The git-tracked folder: AGENT_PROMPT.md, scripts, content bank. */
@@ -47,12 +64,24 @@ export function agentStateDir(network: Network): string {
   return path.join(DATA_DIR, "ingest-agents", network, "state");
 }
 
+/** Where a network's generated trend batches (the Phase 2 cached upload
+ *  CSVs) live — persistent disk, not the git checkout, same reasoning as
+ *  agentStateDir: these are generated working files, not source, and must
+ *  survive a redeploy since a batch can span months of real-world time. */
+export function agentBatchDir(network: Network): string {
+  return path.join(DATA_DIR, "ingest-agents", network, "batches");
+}
+
 /* Env var naming matches the comment already present in the original
    network_config.env files (e.g. "INVOCA_API_TOKEN_HEALTHCARE"), so this is
    following a convention that already existed rather than inventing one. */
 const ENV_SUFFIX: Record<Network, string> = {
   "telecom-1847": "TELECOM",
   "healthcare-2160": "HEALTHCARE",
+  "law-3062": "LAW",
+  "finance-1752": "FINANCE",
+  "insurance-3102": "INSURANCE",
+  "home-services-2751": "HOME_SERVICES",
 };
 
 /** The exact four env var names this network needs — for boot-time logging
@@ -95,19 +124,49 @@ function materializeConfig(network: Network): boolean {
 
 /** Ensures agents/subagents/<network>/state is a symlink onto the persistent
  *  disk, carrying over any real ledger already sitting in the checkout (a
- *  one-time move, guarded so it only ever happens once). */
+ *  one-time move), and REPAIRS it if it's a symlink pointing somewhere else
+ *  than the current DATA_DIR resolution.
+ *
+ *  That repair case is not hypothetical: this whole project directory was
+ *  renamed once (mid-project), and a symlink created before that rename
+ *  keeps pointing at the OLD absolute path forever — `isSymbolicLink()`
+ *  alone can't tell a healthy symlink from a dangling one, so the original
+ *  version of this function treated "it's a symlink" as "already wired up"
+ *  and never looked twice. `fs.Stats.isDirectory()` from `lstatSync` only
+ *  describes the SYMLINK itself (always false for a symlink); checking the
+ *  RESOLVED target's type is what actually detects a dangling link. */
 function materializeStateSymlink(network: Network): void {
   const dir = agentDir(network);
   const linkPath = path.join(dir, "state");
   const diskPath = agentStateDir(network);
   fs.mkdirSync(diskPath, { recursive: true });
 
-  let stat: fs.Stats | fs.Dir | null = null;
-  try { stat = fs.lstatSync(linkPath); } catch { /* nothing there yet */ }
+  let lstat: fs.Stats | null = null;
+  try { lstat = fs.lstatSync(linkPath); } catch { /* nothing there yet */ }
 
-  if (stat && (stat as fs.Stats).isSymbolicLink?.()) return; // already wired up
+  if (lstat?.isSymbolicLink()) {
+    let resolvesToADirectory = false;
+    try { resolvesToADirectory = fs.statSync(linkPath).isDirectory(); } catch { /* dangling */ }
+    if (resolvesToADirectory && fs.readlinkSync(linkPath) === diskPath) return; // already correct
 
-  if (stat && (stat as fs.Stats).isDirectory()) {
+    // Either dangling, or pointing at a stale pre-rename path. Carry over
+    // anything still reachable through the old target before repointing —
+    // best-effort, since a renamed/moved folder usually means the old
+    // target is gone for good and there's nothing left to carry.
+    if (resolvesToADirectory) {
+      const staleTarget = linkPath; // following the symlink reads the OLD location
+      for (const name of fs.readdirSync(staleTarget)) {
+        const from = path.join(staleTarget, name);
+        const to = path.join(diskPath, name);
+        if (!fs.existsSync(to)) fs.copyFileSync(from, to);
+      }
+    }
+    fs.rmSync(linkPath, { force: true });
+    fs.symlinkSync(diskPath, linkPath);
+    return;
+  }
+
+  if (lstat?.isDirectory()) {
     // Real directory (first boot after porting these files in) — carry its
     // ledger onto the disk once, then replace it with the symlink.
     for (const name of fs.readdirSync(linkPath)) {

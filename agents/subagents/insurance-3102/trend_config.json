@@ -1,0 +1,7 @@
+{
+  "network": "insurance-3102",
+  "notAnswered": { "column": "Call Not Answered by Agent", "value": "1" },
+  "conversion": [
+    { "column": "Enrollment Confirmation", "value": "1" }
+  ]
+}
