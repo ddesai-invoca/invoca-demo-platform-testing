@@ -47,7 +47,7 @@ interface MenuItem {
   hidden?: boolean;
 }
 
-interface Summary { admin: boolean; total: number; open: { feedback: number; feature: number } }
+interface Summary { admin: boolean; total: number; open: { feedback: number; feature: number; callback?: number } }
 
 export function LaunchMenu() {
   const [open, setOpen] = useState(false);
@@ -72,7 +72,10 @@ export function LaunchMenu() {
     let alive = true;
     fetch("/api/feedback?summary=1")
       .then((r) => (r.ok ? r.json() : null))
-      .then((d) => { if (alive && d?.admin && d?.open) setSum(d); })
+      /* ⚠️ ALSO FOR A NON-ADMIN WITH CALLBACKS. The server only counts what that person may see, so
+         `open.callback` is theirs alone; an SE who shared a demo needs the Inbox to ring the
+         customer back, and would otherwise have no way to reach the board. */
+      .then((d) => { if (alive && d?.open && (d.admin || (d.open.callback ?? 0) > 0)) setSum(d); })
       /* A failure means no Inbox row and no dot, which is the right degradation:
          the board is still at /feedback and nothing else here is affected. */
       .catch(() => { /* stay hidden */ });
@@ -119,7 +122,9 @@ export function LaunchMenu() {
     };
   }, [open]);
 
-  const openCount = sum ? (sum.open?.feedback ?? 0) + (sum.open?.feature ?? 0) : 0;
+  const cbOpen = sum?.open?.callback ?? 0;
+  /* Feedback and feature counts are the admin's triage queue; a non-admin only ever sees callbacks. */
+  const openCount = sum ? (sum.admin ? (sum.open?.feedback ?? 0) + (sum.open?.feature ?? 0) : 0) + cbOpen : 0;
 
   const items: MenuItem[] = [
     {
@@ -135,7 +140,9 @@ export function LaunchMenu() {
       label: "Inbox",
       hint: sum
         ? (openCount
-            ? `${openCount} open (${sum.open.feedback} feedback, ${sum.open.feature} feature) of ${sum.total}`
+            ? (sum.admin
+                ? `${openCount} open (${sum.open.feedback} feedback, ${sum.open.feature} feature${cbOpen ? `, ${cbOpen} callback${cbOpen === 1 ? "" : "s"}` : ""}) of ${sum.total}`
+                : `${cbOpen} callback${cbOpen === 1 ? "" : "s"} waiting`)
             : `Nothing open, ${sum.total} in total`)
         : undefined,
       to: "/feedback",

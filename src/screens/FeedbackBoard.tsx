@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 
 /* =============================================================================
@@ -18,10 +18,12 @@ import { Link } from "react-router-dom";
 
 interface Attachment { name: string; type: string; size: number; file: string }
 interface Item {
-  id: string; kind: "feedback" | "feature"; title: string; body: string;
+  id: string; kind: "feedback" | "feature" | "callback"; title: string; body: string;
   page?: string; status: string; createdAt: string; updatedAt: string;
   submitter: { name: string; email: string };
   note?: string; notifiedAt?: string; attachments?: Attachment[];
+  /* Only on a `callback`: what a customer on a shared demo asked for (engine/callbacks.ts). */
+  callback?: { prospect: string; channel: "sms" | "voice"; want: "callback" | "live"; phone?: string };
 }
 
 const TONE: Record<string, string> = {
@@ -64,7 +66,7 @@ export function FeedbackBoard() {
   /* Feedback/support and feature requests are triaged differently: one is "is
      something broken", the other is a backlog. Mixing them in one list means
      reading past the wrong kind to find the one you came for. */
-  const [tab, setTab] = useState<"feedback" | "feature">("feedback");
+  const [tab, setTab] = useState<"feedback" | "feature" | "callback">("feedback");
 
   const load = useCallback(async () => {
     try {
@@ -109,11 +111,26 @@ export function FeedbackBoard() {
     finally { setBusyId(""); }
   }
 
+  /* ⚠️ LAND WHERE SOMETHING IS WAITING, ONCE. The board used to open on "Feedback / Support"
+     unconditionally, which for an SE whose only items are callbacks is an empty tab with the
+     one thing that matters hiding behind a second click. A callback is time-sensitive (somebody
+     asked to be rung), so an open one wins; otherwise the first tab that has anything. Only on
+     the first load, so it never yanks the view out from under someone who is browsing. */
+  const landed = useRef(false);
+  useEffect(() => {
+    if (loading || landed.current || !items.length) return;
+    landed.current = true;
+    const isOpen = (i: Item) => i.status !== "Complete" && i.status !== "Declined";
+    if (items.some((i) => i.kind === "callback" && isOpen(i))) setTab("callback");
+    else if (!items.some((i) => i.kind === tab)) setTab((items[0].kind as typeof tab));
+  }, [loading, items, tab]);
+
   const ofKind = items.filter((i) => i.kind === tab);
   const shown = filter === "All" ? ofKind : ofKind.filter((i) => i.status === filter);
   const counts = statuses.map((s) => [s, ofKind.filter((i) => i.status === s).length] as const);
   const nFeedback = items.filter((i) => i.kind === "feedback").length;
   const nFeature = items.filter((i) => i.kind === "feature").length;
+  const nCallback = items.filter((i) => i.kind === "callback").length;
   /* An open item is one nobody has finished with. Surfaced per tab so the split
      answers "what still needs me?" at a glance. */
   const open = (k: string) => items.filter((i) => i.kind === k && i.status !== "Complete" && i.status !== "Declined").length;
@@ -141,11 +158,14 @@ export function FeedbackBoard() {
 
         {items.length > 0 && (
           <div className="fbb-tabs" role="tablist" aria-label="Submission type">
-            {([["feedback", "Feedback / Support", nFeedback], ["feature", "Feature requests", nFeature]] as const)
+            {([["feedback", "Feedback / Support", nFeedback], ["feature", "Feature requests", nFeature], ["callback", "Callbacks", nCallback]] as const)
+              /* ⚠️ A TAB ONLY WHEN THERE IS SOMETHING IN IT — an empty "Callbacks" tab on every
+                 board would be noise for the people who never share a demo. */
+              .filter(([k, , n]) => k !== "callback" || n > 0)
               .map(([k, label, n]) => (
                 <button key={k} role="tab" aria-selected={tab === k}
                   className={"fbb-tab" + (tab === k ? " fbb-tab-on" : "")}
-                  onClick={() => { setTab(k as "feedback" | "feature"); setFilter("All"); }}>
+                  onClick={() => { setTab(k as "feedback" | "feature" | "callback"); setFilter("All"); }}>
                   {label}
                   <span className="fbb-tab-n">{n}</span>
                   {open(k) > 0 && <span className="fbb-tab-open" title={`${open(k)} still open`}>{open(k)} open</span>}
@@ -187,8 +207,8 @@ export function FeedbackBoard() {
           {shown.map((i) => (
             <article key={i.id} className="fbb-card">
               <div className="fbb-card-top">
-                <span className={"fbb-kind " + (i.kind === "feature" ? "fbb-kind-feat" : "fbb-kind-fb")}>
-                  {i.kind === "feature" ? "Feature request" : "Feedback"}
+                <span className={"fbb-kind " + (i.kind === "feature" ? "fbb-kind-feat" : i.kind === "callback" ? "fbb-kind-cb" : "fbb-kind-fb")}>
+                  {i.kind === "feature" ? "Feature request" : i.kind === "callback" ? (i.callback?.want === "live" ? "Wants a person" : "Callback") : "Feedback"}
                 </span>
                 <span className={"fbb-status " + (TONE[i.status] || "fbb-new")}>{i.status}</span>
                 {i.notifiedAt && <span className="fbb-notified" title={`Submitter emailed ${when(i.notifiedAt)}`}>
@@ -196,10 +216,16 @@ export function FeedbackBoard() {
               </div>
 
               <h2 className="fbb-card-title">{i.title}</h2>
+              {i.kind === "callback" && (
+                <p className="fbb-cb">
+                  <b>{i.callback?.phone ?? (i.callback?.want === "live" ? "Wanted to speak to a person right away" : "No number captured in text, see the read-back below")}</b>
+                  <span>{i.callback?.channel === "voice" ? " · voice call" : " · text chat"}</span>
+                </p>
+              )}
               <p className="fbb-card-body">{i.body}</p>
 
               <div className="fbb-meta">
-                {admin && <span className="fbb-who">{i.submitter.name}</span>}
+                {admin && i.kind !== "callback" && <span className="fbb-who">{i.submitter.name}</span>}
                 <span>{when(i.createdAt)}</span>
                 {i.page && i.page !== "/" && <span className="fbb-from">from <code>{i.page}</code></span>}
               </div>
@@ -226,7 +252,7 @@ export function FeedbackBoard() {
 
               {i.note && <p className="fbb-note"><b>Note:</b> {i.note}</p>}
 
-              {admin && (
+              {(admin || i.kind === "callback") && (
                 <div className="fbb-admin">
                   <label>
                     Status
@@ -238,7 +264,7 @@ export function FeedbackBoard() {
                            `notifiedAt` means this person has already been told — so
                            re-completing an already-notified item saves straight through
                            rather than offering to write a comment nobody will receive. */
-                        if (next === "Complete" && !i.notifiedAt) {
+                        if (next === "Complete" && !i.notifiedAt && i.kind !== "callback") {
                           setComposing({ item: i, text: i.note ?? "" });
                           return;
                         }

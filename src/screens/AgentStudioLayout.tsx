@@ -1,4 +1,5 @@
 import { useState, type ReactNode } from "react";
+import { CUSTOMER, isCustomerWorkflowPath } from "../customer/mode";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { useProfile } from "../data/ProfileContext";
 import { CreateWorkflowModal } from "../components/CreateWorkflowModal";
@@ -57,7 +58,7 @@ export function AgentStudioLayout({ children }: { children: ReactNode }) {
       warn: true,
       id: w.id,
     })),
-  ];
+  ].filter((w) => !CUSTOMER || isCustomerWorkflowPath(w.to));
 
   return (
     <div className="ag-page">
@@ -125,9 +126,11 @@ export function AgentStudioLayout({ children }: { children: ReactNode }) {
             {/* ⚠️ The modal lives on the SHARED chrome, not on one sub-page, because the
                 sub-nav that carries this button is shared — the real page offers it from every
                 Agent Studio screen. */}
-            <button className="ag-create-wf" onClick={() => setCreateOpen(true)}>
-              <span className="material-icons">add</span> Create Workflow
-            </button>
+            {!CUSTOMER && (
+              <button className="ag-create-wf" onClick={() => setCreateOpen(true)}>
+                <span className="material-icons">add</span> Create Workflow
+              </button>
+            )}
           </div>
         </aside>
 

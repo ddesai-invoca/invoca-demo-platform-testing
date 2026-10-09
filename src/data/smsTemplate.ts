@@ -1,5 +1,6 @@
 import type { TreeBranch, TreeLeaf, TreePath } from "../components/WorkflowTree";
 import type { CustomerProfile } from "./schema";
+import { fallbackSupportPlaybook } from "./supportPlaybook";
 import { INTENT_SALES, INTENT_SUPPORT, SUPPORT_LEAF, LEAF_QUALIFY, LEAF_ESCALATE } from "./workflowChrome";
 
 /* =============================================================================
@@ -154,7 +155,7 @@ export function qualifyCopy(p: CustomerProfile): Record<"root" | "newSide" | "ex
   return {
     root: {
       question: `Are you a new or existing ${p.customerName} ${lower}?`,
-      segments: [`New ${noun}, No`, `Existing ${noun}, Yes`],
+      segments: [`New ${noun}, Yes`, `Existing ${noun}, Yes`],
       fallback: `Sorry, I didn't quite catch that. Are you a new ${lower} or do you already have ${p.customerName} service?`,
     },
     newSide: {
@@ -326,6 +327,28 @@ export const escalateCopy = (p: CustomerProfile): string => [
 export const SMS_TRIGGER = "0 Campaigns, 2 Forms, and 1 Inbound SMS";
 
 /**
+ * The Need Support side below "All Support Users": the same Qualify shape as the sales side (a
+ * Qualify node, two forks, an Inform under each), with the prospect's own support scenarios as the
+ * terminals plus a person to hand to. The agent behind it assumes access to the customer's systems
+ * (billing, records, scheduling, ticketing) and resolves from what it finds; see
+ * `engine/supportPrompt.ts`. The titles come from the SAME deterministic playbook the customer demo
+ * is built from, so the diagram and the agent name the same scenarios.
+ */
+function supportPaths(
+  p: CustomerProfile,
+  forked: (title: string, kids: TreePath[]) => TreePath,
+  leaf: (title: string) => TreePath,
+): TreePath[] {
+  const t = fallbackSupportPlaybook(p).scenarios.map((x) => x.title);
+  return [
+    forked("Billing and plan", [leaf(t[0] ?? "Billing question"), leaf(t[1] ?? "Cancel or change my service")]),
+    forked("Booking and account", [leaf(t[2] ?? "Problem with my booking"), leaf(t[3] ?? "Account or contact details")]),
+    { title: "Needs a person", action: LEAF_ESCALATE, actionIcon: "headsetMic", tone: "orange", actionKind: "escalate",
+      chips: ["Live agent", "Callback"] },
+  ];
+}
+
+/**
  * The built-in SMS workflow's branches, for any prospect.
  *
  * ⚠️ Everything down to and including the two user-group leaves is `locked` product chrome, the
@@ -368,6 +391,12 @@ export function smsBranches(p: CustomerProfile): TreeBranch[] {
     ...extra(q.existingSide.segments, 2),
   ];
 
+  /* The support side's terminals carry no collect list from the sales table: what the agent does
+     there is look the account up, which is a lookup, not something the consumer is asked for. */
+  const informLeafPlain = (title: string): TreePath => ({
+    title, action: ACT_INFORM, actionIcon: "info", tone: "blue", actionKind: "inform", chips: ["Account lookup"],
+  });
+
   const sales: TreeLeaf = {
     title: SMS_SALES_LEAF, action: LEAF_QUALIFY, actionIcon: "callSplit", locked: true,
     tone: "blue", actionKind: "qualify",
@@ -391,8 +420,10 @@ export function smsBranches(p: CustomerProfile): TreeBranch[] {
     { title: INTENT_SALES, subtitle: intents.sales.looksLike, icon: "cart", locked: true, leaves: [sales] },
     {
       title: INTENT_SUPPORT, subtitle: intents.support.looksLike, icon: "headsetMic", locked: true,
-      leaves: [{ title: SUPPORT_LEAF, action: LEAF_ESCALATE, actionIcon: "headsetMic",
-        tone: "orange", actionKind: "escalate", locked: true }],
+      leaves: [{
+        title: SUPPORT_LEAF, action: LEAF_QUALIFY, actionIcon: "callSplit", locked: true,
+        tone: "blue", actionKind: "qualify", paths: supportPaths(p, forked, informLeafPlain),
+      }],
     },
   ];
 }

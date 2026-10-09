@@ -52,7 +52,7 @@ function SubMenu({ item, anchorTop, onClose }: {
   );
 }
 
-export function Sidebar() {
+export function Sidebar({ items = NAV }: { items?: NavItem[] } = {}) {
   const [open, setOpen] = useState<string | null>(null);
   const [anchorTop, setAnchorTop] = useState(0);
   const { pathname } = useLocation();
@@ -93,7 +93,7 @@ export function Sidebar() {
   return (
     <nav className="sidebar">
       <div className="nav-scroll" ref={scrollRef}>
-        {NAV.map((item) => {
+        {items.map((item) => {
           if (!item.submenu) {
             return (
               <NavLink
@@ -144,7 +144,7 @@ export function Sidebar() {
 
       {open && (
         <SubMenu
-          item={NAV.find((n) => n.path === open)!}
+          item={items.find((n) => n.path === open)!}
           anchorTop={anchorTop}
           onClose={() => setOpen(null)}
         />

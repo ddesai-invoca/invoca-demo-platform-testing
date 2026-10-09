@@ -1,4 +1,4 @@
-import { AccessToken } from "livekit-server-sdk";
+import { AccessToken, RoomServiceClient } from "livekit-server-sdk";
 import { voiceAgentName } from "./appEnv.ts";
 import { RoomConfiguration, RoomAgentDispatch } from "@livekit/protocol";
 import { liveKitVoiceModel } from "../src/data/voiceOptions.ts";
@@ -56,6 +56,8 @@ export interface VoiceTokenRequest {
    * absent resolves to the default, so an old client that sends nothing keeps today's voice.
    */
   voice?: string;
+  /** Token lifetime, e.g. "5m". Defaults to ten minutes. A SHARED demo passes its call length. */
+  ttl?: string;
 }
 
 export interface VoiceTokenResult {
@@ -118,7 +120,7 @@ export async function mintVoiceToken(
     name: "Caller",
     /* Short-lived on purpose: a token is only needed to join, and this one is handed to a
        browser. Ten minutes is comfortably longer than any demo call. */
-    ttl: "10m",
+    ttl: req.ttl ?? "10m",
   });
 
   at.addGrant({ roomJoin: true, room, canPublish: true, canSubscribe: true });
@@ -147,4 +149,23 @@ export async function mintVoiceToken(
   });
 
   return { url: env.url, token: await at.toJwt(), room, agentName: AGENT_NAME };
+}
+
+
+/**
+ * End a room after `ms`, which is how a shared demo's call length is actually enforced.
+ *
+ * ⚠️ A token's `ttl` only limits JOINING; a participant already in the room stays in it past
+ * expiry. Deleting the room disconnects the caller AND the agent, which also stops the agent
+ * being left in an empty room and billing (see the orphaned-agent note in CLAUDE.md).
+ * ⚠️ The timer lives in this process, so a restart inside the window loses it. The call is
+ * still bounded by the token's ttl for anyone who tries to rejoin, and the per-day call cap.
+ */
+export function endRoomAfter(room: string, ms: number, env: LiveKitEnv): void {
+  const host = env.url.replace(/^wss:/, "https:").replace(/^ws:/, "http:");
+  const t = setTimeout(async () => {
+    try { await new RoomServiceClient(host, env.apiKey, env.apiSecret).deleteRoom(room); }
+    catch (e) { console.error(`[livekit] could not end room ${room}:`, (e as Error).message); }
+  }, ms);
+  t.unref?.();
 }

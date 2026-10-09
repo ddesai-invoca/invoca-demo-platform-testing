@@ -69,8 +69,16 @@ export async function handleFeedbackApi(
   const p = urlPath.split("?")[0].replace(/\/+$/, "");
   if (!p.startsWith("/api/feedback")) return null;   // not ours
 
+  const me = (user.email || "").toLowerCase();
+  /* ⚠️ A CALLBACK BELONGS TO WHOEVER SHARED THE DEMO. Its submitter is a synthetic
+     `share:<slug>` identity nobody signs in as, so the usual "the submitter sees their own"
+     rule would hide every callback from the SE it is for — and the SE is exactly who has to
+     ring the customer back, admin or not. Ownership is by `ownerEmail`, checked on the
+     record, so an SE still cannot see anybody else's. */
   const mine = (r: FeedbackRecord) =>
-    (r.submitter?.email || "").toLowerCase() === (user.email || "").toLowerCase();
+    r.kind === "callback"
+      ? (r.callback?.ownerEmail || "").toLowerCase() === me
+      : (r.submitter?.email || "").toLowerCase() === me;
 
   if (p === "/api/feedback") {
     if (method === "GET") {
@@ -89,6 +97,7 @@ export async function handleFeedbackApi(
           open: {
             feedback: visible.filter((r) => r.kind === "feedback" && isOpen(r)).length,
             feature: visible.filter((r) => r.kind === "feature" && isOpen(r)).length,
+            callback: visible.filter((r) => r.kind === "callback" && isOpen(r)).length,
           },
         });
       }
@@ -240,7 +249,9 @@ export async function handleFeedbackApi(
   /* Triage is an admin action. A submitter marking their own request Complete
      would both skew the board and mail themselves. */
   if (method === "PATCH") {
-    if (!isAdmin) return err(403, "Only an admin can change status.");
+    /* Triage is an admin action, with one exception: the SE who shared a demo works their own
+       callbacks (they are the one calling back), but only those. */
+    if (!isAdmin && !(rec.kind === "callback" && mine(rec))) return err(403, "Only an admin can change status.");
     const next = String(body?.status ?? "") as FeedbackStatus;
     if (next && !STATUSES.includes(next)) return err(400, "Unknown status.");
     const now = new Date().toISOString();
@@ -256,7 +267,9 @@ export async function handleFeedbackApi(
          later save while the item sits in a terminal status would mail the person
          again, and "your request is done" arriving three times is worse than it
          never arriving. */
-      if (TERMINAL.includes(next) && !rec.notifiedAt) {
+      /* ⚠️ NEVER FOR A CALLBACK: its submitter is `share:<slug>`, not an address, and the "your
+         request is done" note would be addressed to nobody. */
+      if (TERMINAL.includes(next) && !rec.notifiedAt && rec.kind !== "callback") {
         mailed = await sendMail(completionEmail({
           to: rec.submitter.email,
           name: rec.submitter.name,

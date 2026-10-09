@@ -1,0 +1,23 @@
+/* Customer build only. Nothing here is loaded by the staff app. */
+.cust-gate { min-height: 100vh; display: flex; align-items: center; justify-content: center; background: #f6f7f9; padding: 16px; }
+.cust-card { width: 100%; max-width: 400px; background: #fff; border: 1px solid #e7e9eb; border-radius: 8px; padding: 32px; box-shadow: 0 2px 4px rgba(0,0,0,.05); }
+.cust-logo { height: 28px; margin-bottom: 24px; display: block; }
+.cust-h { font-size: 22px; font-weight: 700; color: #15243e; margin: 0 0 8px; }
+.cust-p { font-size: 15px; color: #5b6577; margin: 0 0 20px; line-height: 1.4; }
+.cust-input { width: 100%; box-sizing: border-box; height: 40px; padding: 0 12px; font: inherit; font-size: 16px; border: 1px solid #d0d3d8; border-radius: 4px; }
+.cust-input:focus { outline: 2px solid #2666f9; outline-offset: -1px; border-color: transparent; }
+.cust-btn { margin-top: 16px; width: 100%; height: 40px; border: 0; border-radius: 4px; background: #2666f9; color: #fff; font: inherit; font-weight: 700; cursor: pointer; }
+.cust-btn:disabled { background: #e7e9eb; color: #a1a7b2; cursor: default; }
+.cust-err { margin-top: 10px; font-size: 14px; color: #b33b00; }
+.cust-name { margin-left: 16px; font-weight: 700; color: #15243e; }
+.cust-until { margin-left: auto; font-size: 13px; color: #5b6577; }
+.cust-banners { position: fixed; left: 50%; bottom: 20px; transform: translateX(-50%); z-index: 3000; display: flex; flex-direction: column; gap: 8px; width: min(560px, calc(100vw - 32px)); pointer-events: none; }
+.cust-banner { background: #15243e; color: #fff; padding: 10px 14px; border-radius: 6px; font-size: 14px; box-shadow: 0 4px 12px rgba(0,0,0,.25); }
+.cust-banner-warn { background: #b33b00; }
+.cust-banner-ok { background: #0d5400; }
+
+/* NO AI ASSIST, ANYWHERE. openDrawer is a no-op in this build; these remove the affordances so
+   nothing reads as broken. Every sparkle in the product, plus each AI undo. */
+.customer-mode .tb-ai, .customer-mode .pp-ai, .customer-mode .dash-ai-tile,
+.customer-mode .vp-icon-ai, .customer-mode .vp-icon-hover,
+.customer-mode .wcp-icon-hover, .customer-mode .ag-create-wf, .customer-mode .as-create { display: none !important; }

@@ -751,6 +751,48 @@ export const WorkflowBranch = z.object({
 });
 export type WorkflowBranch = z.infer<typeof WorkflowBranch>;
 
+/* THE CUSTOMER SUPPORT PLAYBOOK — what a CUSTOMER-FACING demo's Support agent knows and does
+   (built for the standalone customer demo; see engine/supportGen.ts).
+
+   ⚠️ IT IS ONE STRUCTURED OBJECT RENDERED TWO WAYS, ON PURPOSE. The SMS and the voice Support
+   agents read the same playbook, so they can never disagree about what a billing question or
+   a cancellation gets, and the workflow diagram draws its branches from the same scenarios.
+   Stored ON the ExtraWorkflow that uses it and never in a generation schema: `toSchema()`'s
+   sanitize() forces every optional field onto the model, and this is written by a dedicated
+   call (or the deterministic fallback), not by the profile pipeline.
+
+   ⚠️ THE ACCOUNT IS INVENTED, AND SAYS SO. The demo's premise is that the agent is integrated
+   with the customer's billing / CRM / ticketing systems, which no demo has — so `customer`
+   is a made-up existing customer and every figure in a scenario is made up to match it. The
+   prompt states outright that this is demo data, so the agent never presents it as real to
+   anybody who is not playing the part. */
+export const SupportScenario = z.object({
+  id: z.string(),                       // kebab-case, unique within the playbook
+  title: z.string(),                    // "Billing question"
+  whoCalls: z.string(),                 // who, in this business, actually raises this
+  opener: z.string(),                   // a realistic first message from that person
+  lookup: z.string(),                   // what the agent pulls up, with the invented facts
+  resolve: z.array(z.string()),         // ordered steps that CONTAIN it without a human
+  escalateWhen: z.array(z.string()),    // the specific situations that must go to a person
+});
+export type SupportScenario = z.infer<typeof SupportScenario>;
+
+export const SupportPlaybook = z.object({
+  customer: z.object({
+    name: z.string(),                   // the invented existing customer (matches the screen-pop caller when there is one)
+    account: z.string(),                // "Account 48213"
+    summary: z.array(z.string()),       // 4-7 invented facts: plan, balance, last payment, next visit...
+  }),
+  systems: z.array(z.string()),         // the systems the agent is assumed to be integrated with
+  scenarios: z.array(SupportScenario),
+  escalation: z.object({
+    directLine: z.string(),             // a reserved 555 number that skips every AI agent
+    hours: z.string(),                  // when a human answers it
+    callbackWindow: z.string(),         // how soon a scheduled callback happens
+  }),
+});
+export type SupportPlaybook = z.infer<typeof SupportPlaybook>;
+
 export const ExtraWorkflow = z.object({
   slug: z.string(),                     // URL segment under /workflow/<slug>
   label: z.string(),                    // "Reyes Law - SMS - Nurture"
@@ -791,6 +833,10 @@ export const ExtraWorkflow = z.object({
      `toSchema()`'s `sanitize()` would otherwise force it onto the model (the trap that made
      the engine invent `InteractionRow.cells`). Verified: no engine phase writes extraWorkflows. */
   openingMessageWins: z.boolean().optional(),
+  /* Present only on a customer Support workflow. Its presence selects the containment-first
+     support prompt on BOTH channels (see `supportPlaybook` on ChatBrain); absent on every
+     other workflow, so none of them changes. Not part of any generation schema. */
+  support: SupportPlaybook.optional(),
 });
 export type ExtraWorkflow = z.infer<typeof ExtraWorkflow>;
 

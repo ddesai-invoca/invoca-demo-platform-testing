@@ -16,6 +16,8 @@
 
 import Anthropic from "@anthropic-ai/sdk";
 import { slotTable } from "../src/data/voiceBooking.ts";
+import { supportSystemPrompt } from "./supportPrompt.ts";
+import type { SupportPlaybook } from "../src/data/schema.ts";
 
 const CHAT_MODEL = "claude-haiku-4-5-20251001";
 
@@ -84,6 +86,19 @@ export interface SmsFlowNode {
 export interface ChatBrain {
   customerName: string;
   industry?: string;
+  /**
+   * A containment-first customer SUPPORT agent, on either channel (engine/supportPrompt.ts).
+   * ⚠️ ITS PRESENCE SELECTS THE WHOLE PROMPT, before every other field is read: the routing
+   * prompt forbids resolving issues and the sales prompt is an arc toward a booking, and
+   * either would contradict an agent whose job is to resolve. Absent on every other brain, so
+   * none of them changes.
+   */
+  supportPlaybook?: SupportPlaybook;
+  /** The normal (sales / routing) agent for this prospect. With a supportPlaybook it becomes the
+   *  SALES PATH of a two-path agent; see engine/supportPrompt.ts. */
+  salesBrain?: ChatBrain;
+  /** SMS: the message a Support conversation opens with. */
+  smsGreeting?: string;
   rules?: string[];
   qaPairs?: { question: string; answer: string }[];
   knowledge?: string[];
@@ -436,6 +451,12 @@ function dedupeQuestions(brain: ChatBrain, questions: string[]): string[] {
 }
 
 function buildSystem(brain: ChatBrain, voice: boolean): string {
+  /* ⚠️ FIRST, before `customSystem`, the sales persona and the routing flow: see `supportPlaybook`. */
+  if (brain.supportPlaybook)
+    return supportSystemPrompt(
+      { ...brain, supportPlaybook: brain.supportPlaybook }, voice, { noDash: NO_DASH_RULE, sms: SMS_FORMAT_RULES },
+      brain.salesBrain ? buildSystem({ ...brain.salesBrain, supportPlaybook: undefined, salesBrain: undefined }, voice) : undefined,
+    );
   /* A workflow-supplied playbook wins over the generated persona, with our
      channel format rules appended so the phone UI stays renderable. */
   if (!voice && brain.customSystem) {

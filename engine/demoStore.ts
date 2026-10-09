@@ -42,6 +42,39 @@ const DEMOS_DIR = path.join(DATA_DIR, "demos");
 
 export interface DemoCreator { email: string; name: string }
 
+/* A snapshot of one agent's prompt inputs, taken by STAFF when a demo is shared. A
+   customer session never sends its own brain (see engine/share.ts): it names one of
+   these by key, so the only text that can reach the model or the voice agent is text a
+   staff member's own browser produced. */
+export interface ShareBrainEntry { brain: unknown; greeting?: string; voice?: string }
+
+/* The customer-facing share of a demo. Lives ON the record so it travels with the demo
+   (duplicate deliberately does not copy it), but it is NEVER serialised to the browser
+   whole: `summarize` and the API strip everything except the ShareSummary below. */
+export interface ShareBlock {
+  slug: string;
+  passwordHash: string;
+  salt: string;
+  createdAt: string;
+  createdBy: DemoCreator;
+  softExpiresAt: string;          // live agents stop here; read-only views stay open
+  hardCutoffAt: string;           // the link stops working entirely
+  revokedAt?: string;
+  brains: Record<string, ShareBrainEntry>;
+}
+
+/** The safe-to-show slice of a ShareBlock. */
+export interface ShareSummary {
+  slug: string;
+  softExpiresAt: string;
+  hardCutoffAt: string;
+  revokedAt?: string;
+}
+export const shareSummary = (s: ShareBlock): ShareSummary => ({
+  slug: s.slug, softExpiresAt: s.softExpiresAt, hardCutoffAt: s.hardCutoffAt,
+  ...(s.revokedAt ? { revokedAt: s.revokedAt } : {}),
+});
+
 /** One saved demo. `profile` is a CustomerProfile; `customizations` holds the
  *  Ask AI layer, keyed by dashboard pathname (e.g. "/dashboards/marketing"). */
 export interface DemoRecord {
@@ -70,6 +103,11 @@ export interface DemoRecord {
      suffixes and fixes ALL-CAPS rows; this keeps the verbatim row searchable, so
      pasting the name off the original list still finds the demo. */
   listedAs?: string;
+  /* Present only on a demo that has been shared with a customer. Optional so every
+     record already on the disk keeps loading, and preserved by PATCH (which spreads the
+     record) — but a client can neither set nor clear it through PATCH, which only ever
+     takes `profile` and `customizations` from the body. */
+  share?: ShareBlock;
   profile: unknown;
   customizations: {
     overrides: Record<string, unknown>;
@@ -78,7 +116,14 @@ export interface DemoRecord {
 }
 
 /** List view — everything the library needs except the heavy payload. */
-export type DemoSummary = Omit<DemoRecord, "profile" | "customizations">;
+export type DemoSummary = Omit<DemoRecord, "profile" | "customizations" | "share"> & { share?: ShareSummary };
+
+/** A record safe to hand to a signed-in browser: the share block is reduced to its summary,
+ *  so the password hash, salt and stored prompts never leave the server. */
+export const publicRecord = (d: DemoRecord) => {
+  const { share, ...rest } = d;
+  return share ? { ...rest, share: shareSummary(share) } : rest;
+};
 
 const VALID_ID = /^[a-z0-9][a-z0-9-]*$/;
 
@@ -104,8 +149,8 @@ function writeAtomic(file: string, data: string) {
 }
 
 export const summarize = (d: DemoRecord): DemoSummary => {
-  const { profile: _p, customizations: _c, ...rest } = d;
-  return rest;
+  const { profile: _p, customizations: _c, share, ...rest } = d;
+  return share ? { ...rest, share: shareSummary(share) } : rest;
 };
 
 export function listDemos(): DemoSummary[] {
@@ -122,6 +167,12 @@ export function listDemos(): DemoSummary[] {
     }
   }
   return out.sort((a, b) => (b.updatedAt ?? "").localeCompare(a.updatedAt ?? ""));
+}
+
+/** Every demo id, without reading a single file body. */
+export function listDemoIds(): string[] {
+  ensureDir();
+  return fs.readdirSync(DEMOS_DIR).filter((n) => n.endsWith(".json")).map((n) => n.slice(0, -5)).filter(isValidId);
 }
 
 export function getDemo(id: string): DemoRecord | null {

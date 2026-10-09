@@ -277,3 +277,37 @@ export function completionEmail(opts: {
     `</div>`;
   return { to: opts.to, subject: `Done: ${opts.title}`, text: lines.join("\n"), html };
 }
+
+
+/** "A customer asked for a person" — to whoever shared the demo, and the admins.
+ *
+ *  ⚠️ THE CUSTOMER GAVE A PHONE NUMBER AND NO EMAIL, so there is nobody to Reply to: the whole
+ *  point of this mail is to ring them back, and the number and time go at the top. Deliberately
+ *  no `replyTo`, which would otherwise send the reply to the sending account. */
+export function callbackEmail(opts: {
+  to: string; prospect: string; channel: string; want: "callback" | "live";
+  phone?: string; confirmation: string; transcript: string; boardUrl: string;
+}): Mail {
+  const what = opts.want === "live" ? "asked to be connected to a person" : "asked for a callback";
+  const lines = [
+    `Someone on the ${opts.prospect} demo (${opts.channel === "voice" ? "voice call" : "text chat"}) ${what}.`,
+    ``,
+    ...(opts.phone ? [`Number they gave: ${opts.phone}`] : [`No number was captured in text. Check the read-back below.`]),
+    ...(opts.confirmation ? [``, `What the agent confirmed:`, `  ${opts.confirmation}`] : []),
+    ``,
+    `The conversation:`,
+    opts.transcript,
+    ``,
+    `Open it in the Inbox: ${opts.boardUrl}`,
+  ];
+  const html =
+    `<div style="font-family:Inter,system-ui,-apple-system,'Segoe UI',sans-serif;font-size:15px;line-height:1.6;color:#0a231e">` +
+    `<p>Someone on the <strong>${esc(opts.prospect)}</strong> demo (${opts.channel === "voice" ? "voice call" : "text chat"}) ${esc(what)}.</p>` +
+    `<p style="font-size:18px;margin:12px 0"><strong>${opts.phone ? esc(opts.phone) : "No number captured in text"}</strong></p>` +
+    (opts.confirmation ? `<blockquote style="margin:12px 0;padding:10px 14px;background:#f8faf1;border-left:3px solid #00b388;border-radius:0 8px 8px 0">${esc(opts.confirmation)}</blockquote>` : "") +
+    `<p style="color:#626464;font-size:13px;margin-bottom:4px">The conversation</p>` +
+    `<pre style="white-space:pre-wrap;font-family:inherit;font-size:13px;background:#f4f5f4;padding:10px 14px;border-radius:8px">${esc(opts.transcript)}</pre>` +
+    `<p><a href="${esc(opts.boardUrl)}" style="color:#00a87f">Open it in the Inbox</a></p>` +
+    `</div>`;
+  return { to: opts.to, subject: `Callback request: ${opts.prospect}`, text: lines.join("\n"), html };
+}

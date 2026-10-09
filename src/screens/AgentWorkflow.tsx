@@ -469,6 +469,8 @@ export function AgentWorkflow() {
      instead would be the same landed-and-ignored shape fixed elsewhere today. */
   const brainOpts = created
     ? { scopePath: pathname, minimal: true }
+    : extra?.support
+    ? { scopePath: pathname, support: { playbook: extra.support, greeting: (tree as { agent?: { greeting?: string } }).agent?.greeting || extra.openingMessage } }
     : extra?.bookingLocations?.length
     ? {
         scopePath: pathname,

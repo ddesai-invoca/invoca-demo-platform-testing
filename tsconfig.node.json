@@ -27,5 +27,5 @@
      What the gap actually cost: a required `StatusInput` field went unnoticed at the
      call site, and a duplicated brace in `server.ts` passed `tsc -b` and surfaced only
      when the server was booted. Do not narrow this back. */
-  "include": ["vite.config.ts", "server.ts", "googleAuth.ts", "engine"]
+  "include": ["vite.config.ts", "vite.customer.config.ts", "server.ts", "googleAuth.ts", "engine"]
 }

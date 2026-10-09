@@ -65,3 +65,5 @@ agent/secrets.env
 # Nothing here was ever committed, so this only stops an accidental `git add -A`. To ship a
 # specific capture on purpose (a small `--linked` one), add it explicitly with `git add -f`.
 public/replicas/*.html
+
+dist-customer

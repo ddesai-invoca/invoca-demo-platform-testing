@@ -11,7 +11,7 @@ the API keys server-side — so this is **not** a static site.
 
 ## Live deployment
 
-- **URL:** https://invoca-demo-platform.onrender.com
+- **URL:** https://invoca-demo-platform-testing.onrender.com/
 - **Access:** Google sign-in, restricted to **@invoca.com** accounts.
 - **Host:** Render (Starter web service, auto-deploys on push to `main`).
 

@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { CUSTOMER } from "../customer/mode";
 import { Link } from "react-router-dom";
 import { useProfile } from "../data/ProfileContext";
 import type { GumloopArtifact } from "../data/schema";
@@ -128,7 +129,9 @@ export function MyReports() {
   /* ⚠️ GATED ON THE RENDERED SLICES, not merely on the call. A prospect with no seeded
      `voiceRoutingDemo` cannot produce one, and a row that opens nothing is worse than no row. */
   const hasVoiceAi = !!overrides.voiceRoutingDemo && !!overrides.voiceScreenpop;
-  const all = reportsFor(!!profile.reports.conversationIntelligence, !!profile.reports.smsConversationIntelligence, !!profile.reports.voiceConversationIntelligence, profile.reports.gumloopArtifacts ?? [], hasTierReports(profile), hasVoiceAi, hasLsa);
+  const allRows = reportsFor(!!profile.reports.conversationIntelligence, !!profile.reports.smsConversationIntelligence, !!profile.reports.voiceConversationIntelligence, profile.reports.gumloopArtifacts ?? [], hasTierReports(profile), hasVoiceAi, hasLsa);
+  /* Customer build: only the two AI conversation reports. */
+  const all = CUSTOMER ? allRows.filter((r) => r.to === "/reports/sms-conversation-intelligence" || r.to === "/reports/voice-conversation-intelligence") : allRows;
   const rows = search.trim()
     ? all.filter((r) => r.name.toLowerCase().includes(search.trim().toLowerCase()))
     : all;

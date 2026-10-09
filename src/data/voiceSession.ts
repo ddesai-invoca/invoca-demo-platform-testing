@@ -6,7 +6,7 @@ import { treeToVoicePaths, VOICE_WORKFLOW_SCOPE_PATH } from "./voicePaths";
 import { emptyWorkflowGreeting } from "./workflowChrome";
 import { voiceSpecFor, specWithConfig, type VoiceAgentConfig , DEFAULT_ESCALATE_HANDLING, DEFAULT_SUPPORT_INTENT } from "./voiceAgentSpec";
 import type { WorkflowTreeModel } from "../components/WorkflowTree";
-import type { VoiceConversation, VoiceTurn } from "./schema";
+import type { CustomerProfile, VoiceConversation, VoiceTurn } from "./schema";
 
 /* =============================================================================
    voiceSession.ts — the brain, the spec and the capture, shared by the voice call
@@ -64,6 +64,12 @@ export interface BrainOpts {
    * prompt, decides what availability exists.
    */
   booking?: { greeting?: string; locations: string[]; slots: Record<string, string[]> };
+  /**
+   * Preview a customer SUPPORT workflow: a containment-first agent driven entirely by its
+   * playbook (engine/supportPrompt.ts). Like `booking`, it REPLACES the routing machinery
+   * rather than trimming it, because the routing prompt forbids resolving issues.
+   */
+  support?: { playbook: NonNullable<CustomerProfile["reports"]["extraWorkflows"]>[number]["support"]; greeting?: string };
 }
 
 /**
@@ -179,6 +185,7 @@ export function useBrain(opts?: BrainOpts) {
        the phone used the generic derived flow — the two-surfaces-disagreeing failure this
        repo keeps hitting, in its most visible form: a prospect hears the wrong greeting. */
     voiceMinimal: minimal,
+    ...(opts?.support?.playbook ? { supportPlaybook: opts.support.playbook } : {}),
     /* ⚠️⚠️ **THE BOOKING FLOW DROPS THE SAME FIELDS THE MINIMAL FLOW DOES, AND FOR THE SAME
        REASON.** The service-area gate can REFUSE a caller and the routing steps name a team to
        hand off to; a booking agent must do neither. Leaving them in would put a refusal and a
@@ -195,7 +202,8 @@ export function useBrain(opts?: BrainOpts) {
     voiceBookingSlots: booking?.slots,
     serviceZips: minimal || booking ? undefined : spec?.serviceZips,
     outOfAreaScript: minimal || booking ? undefined : spec?.outOfAreaScript,
-    voiceGreeting: minimal ? emptyWorkflowGreeting(profile.customerName)
+    voiceGreeting: opts?.support?.playbook ? (opts.support.greeting?.trim() || undefined)
+      : minimal ? emptyWorkflowGreeting(profile.customerName)
       /* The workflow's own opener, then whatever the SE edited on it, then the prospect's. */
       : booking ? (booking.greeting?.trim() || spec?.greeting)
       : spec?.greeting,

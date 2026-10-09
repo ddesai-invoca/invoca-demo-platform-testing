@@ -1,4 +1,4 @@
-import type { CustomerProfile } from "./schema";
+import type { CustomerProfile } from "./schema.ts";
 
 /* =============================================================================
    voiceCopy.ts — the voice workflow's per-prospect vocabulary

@@ -330,7 +330,7 @@ console.log("\nThe completion comment reaches the email");
     : bad("the HTML email no longer carries the note, or stopped escaping it");
 
   const board = code("src/screens/FeedbackBoard.tsx");
-  /if \(next === "Complete" && !i\.notifiedAt\)/.test(board)
+  /if \(next === "Complete" && !i\.notifiedAt( && i\.kind !== "callback")?\)/.test(board)
     ? ok("picking Complete opens the composer instead of saving straight through")
     : bad("the board no longer asks for a comment when completing");
   /* ⚠️ Already-notified items must NOT offer a comment: no second email is sent, so the

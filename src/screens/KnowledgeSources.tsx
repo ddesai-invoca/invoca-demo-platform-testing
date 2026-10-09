@@ -1,22 +1,9 @@
 import { useState } from "react";
 import { useProfile } from "../data/ProfileContext";
 import { AgentStudioLayout } from "./AgentStudioLayout";
-import type { CustomerProfile, KnowledgeSource } from "../data/schema";
+import { Link } from "react-router-dom";
+import { knowledgeSourcesFor } from "../data/knowledgeDocs";
 import { usePageData } from "../components/GeneratedTiles";
-
-/* Fallback sources for profiles missing their own — derived from the brand's
-   name + domain so the table always renders. Freshly generated prospects get
-   their own (playbook + the main website pages the agent learned from). */
-function defaultSources(profile: CustomerProfile): KnowledgeSource[] {
-  const doc = `${profile.customerName.replace(/[^A-Za-z0-9]+/g, "_")}_Sales_Playbook.pdf`;
-  const base = `https://www.${profile.brandDomain}`;
-  return [
-    { name: doc, type: "Document", lastUpdated: "03/11/2026 10:21 AM" },
-    { name: base, type: "Web Link", lastUpdated: "03/11/2026 10:02 AM" },
-    { name: `${base}/services/`, type: "Web Link", lastUpdated: "03/11/2026 10:02 AM" },
-    { name: `${base}/contact/`, type: "Web Link", lastUpdated: "03/11/2026 10:02 AM" },
-  ];
-}
 
 export function KnowledgeSources() {
   const { profile } = useProfile();
@@ -25,11 +12,13 @@ export function KnowledgeSources() {
   /* Registers this page as the AI scope and returns agentConfig with any
      edits made ON THIS PAGE overlaid. */
   const ac = usePageData(profile.reports.agentConfig);
-  const configured = ac?.knowledgeSources ?? [];
-  const all = configured.length ? configured : defaultSources(profile);
+  const all = knowledgeSourcesFor(profile, ac?.knowledgeSources);
+  /* The ORIGINAL index travels with each row: the document page looks the source up by it, so a
+     filtered list must not renumber. */
+  const indexed = all.map((s, i) => ({ s, i }));
   const rows = search.trim()
-    ? all.filter((s) => s.name.toLowerCase().includes(search.trim().toLowerCase()))
-    : all;
+    ? indexed.filter(({ s }) => s.name.toLowerCase().includes(search.trim().toLowerCase()))
+    : indexed;
 
   return (
     <AgentStudioLayout>
@@ -58,13 +47,13 @@ export function KnowledgeSources() {
             </tr>
           </thead>
           <tbody>
-            {rows.map((s, i) => (
+            {rows.map(({ s, i }) => (
               <tr key={i}>
                 <td className="ks-status-col"><span className="material-icons ks-check">check_circle</span></td>
                 <td className="ks-name">
                   <span className="ks-name-inner">
                     <span className="material-icons ks-name-ic">{s.type === "Document" ? "attach_file" : "language"}</span>
-                    <a className="ks-link" href="#">{s.name}</a>
+                    <Link className="ks-link" to={`/agent-studio/agent/knowledge/doc?i=${i}`}>{s.name}</Link>
                   </span>
                 </td>
                 <td>{s.type}</td>

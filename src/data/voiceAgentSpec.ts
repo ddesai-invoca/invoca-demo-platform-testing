@@ -1,8 +1,8 @@
-import { isProspect } from "./prospect";
-import { isKnownVoice } from "./voiceOptions";
-import { voiceCopy } from "./voiceCopy";
-import { deriveUseCases, type VoiceUseCases } from "./voiceUseCases";
-import type { CustomerProfile } from "./schema";
+import { isProspect } from "./prospect.ts";
+import { isKnownVoice } from "./voiceOptions.ts";
+import { voiceCopy } from "./voiceCopy.ts";
+import { deriveUseCases, type VoiceUseCases } from "./voiceUseCases.ts";
+import type { CustomerProfile } from "./schema.ts";
 
 /* =============================================================================
    voiceAgentSpec.ts — a prospect's own Qualify-and-Route configuration

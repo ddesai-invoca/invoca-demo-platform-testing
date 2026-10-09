@@ -20,7 +20,7 @@ import { CustomerProfile, DigitalInsightsReport, InteractionRow, DashboardView, 
 import { sweepValue } from "./dashSweep.ts";
 
 const QM_SCORE_MEAN = 71;   // true mean of the agent scorecard series
-const MODEL = "claude-opus-4-8";
+export const MODEL = "claude-opus-4-8";
 const FAST_MODEL = "claude-haiku-4-5-20251001";
 
 /* Identity + canonical terminology, chosen FAST up-front (a tiny call before the pool)
@@ -270,7 +270,7 @@ type Progress = (e: { phase: string; status: "start" | "done" }) => void;
    Uses STREAMING: with large max_tokens + high effort a phase can exceed the
    SDK's 10-minute non-streaming ceiling (which throws before the request is even
    sent), so we stream and await the final message. */
-async function structured<T>(client: Anthropic, zodType: any, prompt: string, maxTokens: number, model: string = MODEL): Promise<T> {
+export async function structured<T>(client: Anthropic, zodType: any, prompt: string, maxTokens: number, model: string = MODEL): Promise<T> {
   const stream = client.messages.stream({
     model,
     max_tokens: maxTokens,
@@ -661,7 +661,7 @@ function generateAiAgentConversionDashboard(client: Anthropic, name: string, bri
       `- summary: title "AI Agent Performance Summary", tiles EXACTLY [ {label:"Interactions", value "${n(Math.round(sc.calls * 0.4))}"}, {label:"${bookingTerm} Scheduled (Percent)", value like "56%"}, {label:"${conversionTerm} (Percent)", value like "33%"}, {label:"Total Revenue (Sale Amount)", value "${$(Math.round(sc.revenue * 0.57))}"} ] — the AI agent converts BETTER than the blended ${sc.purchasePct}% rate, which is the point of the dashboard. Every breakdown on this page rolls up to THESE two figures.\n` +
       `- conversionCards: EXACTLY 6. Titles in this order: "LEAD FORM (Conversions): Live Agent", "LEAD FORM (Conversions): SMS Agent & Live Agent", "LEAD FORM (Conversions): SMS Agent Assist", "Voice Agent (Conversions): Live Agent", "Voice Agent (Conversions): Voice Agent & Live Agent", "Voice Agent (Conversions): Voice Agent". chips first value: LEAD FORM cards (1–3) use "Interaction Type: Form Fill"; Voice Agent cards (4–6) use "Interaction Type: Voice". The other two chips follow the pattern: cards 1&4 [..., "SMS Engaged: No","Live Agent Call: Yes"]; cards 2&5 [..., "SMS Engaged: Yes","Live Agent Call: Yes"]; cards 3&6 [..., "SMS Engaged: Yes","Live Agent Call: No"]. Each card tiles EXACTLY [ {label:"${conversionTerm} (Percent)", value like "21%"}, {label:"Total Revenue (Sale Amount)", value like "$27,760"} ]. ${conversionTerm} % should INCREASE across each group (agent-assisted / agent-only convert best).\n` +
       `- breakdowns: EXACTLY 5.\n` +
-      `  • Four with hasDonut:true: "Calls by Source"/"Source: Call Outcome Summary"/dimension "Marketing Source"; "Calls by Medium"/"Medium: Call Outcome Summary"/"Marketing Medium"; "Calls by Campaign"/"Campaign: Call Outcome Summary"/"Marketing Campaign" (campaign names SPECIFIC to ${name}); "Calls by Search Term"/"Search Term: Call Outcome Summary"/"Marketing Search Term" (real search queries a ${name} customer would type).\n` +
+      `  • Four with hasDonut:true: "Calls by Source"/"Source: Interaction Outcome Summary"/dimension "Marketing Source"; "Calls by Medium"/"Medium: Call Outcome Summary"/"Marketing Medium"; "Calls by Campaign"/"Campaign: Call Outcome Summary"/"Marketing Campaign" (campaign names SPECIFIC to ${name}); "Calls by Search Term"/"Search Term: Call Outcome Summary"/"Marketing Search Term" (real search queries a ${name} customer would type).\n` +
       `    Each: metricColumns ["Call Count","${bookingTerm} Scheduled (Percent)","${conversionTerm} (Percent)","Total Revenue (Sale Amount)"]; exactly 5 rows sorted by Call Count DESC (metrics aligned as [count, a %, a %, "$"+amount]); and donutTotal = an integer 15-30% LARGER than the sum of the 5 rows' Call Counts.\n` +
       `  • One with hasDonut:false: title & tableTitle "Conversions by Product Category", dimension "Product Category", metricColumns ["Call Count","${bookingTerm} Scheduled (Percent)","${conversionTerm} (Percent)","Total Revenue (Sale Amount)"], exactly 5 product/service-category rows for ${name}.\n` +
       `- productCategoryGraph: stacked bar. yLabel "${conversionTerm} (Count)". xLabels ${JSON.stringify(WEEK_LABELS)}. series = one per product category, SAME names and SAME ORDER as the Product Category table rows, and each series MUST sum to that row own ${conversionTerm} count (its Call Count x its percent). A series total that contradicts its table row is the most common bug here.\n` +

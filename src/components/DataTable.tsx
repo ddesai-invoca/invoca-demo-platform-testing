@@ -1,4 +1,5 @@
 import type { InteractionRow, SignalColumn } from "../data/schema";
+import { callingPageFor } from "../data/callingPage";
 
 interface Props {
   dimensionColumns: string[];
@@ -54,6 +55,7 @@ export function leadingCells(row: InteractionRow, headers: string[]): string[] {
      those instead, which is right for every demo already saved with the bad array. */
   if (row.cells?.length === headers.length) return row.cells.slice();
   return headers.map((h) => {
+    if (/calling\s*page/i.test(h)) return callingPageFor(row);
     const hit = HEADER_FIELD.find(([re]) => re.test(h));
     return hit ? String(row[hit[1]] ?? "") : "";
   });
@@ -62,7 +64,7 @@ export function leadingCells(row: InteractionRow, headers: string[]): string[] {
 /* Which cell gets the truncating .landing treatment, decided from the HEADER rather
    than from a field name — once a column can move, "the 5th field" is no longer a
    reliable way to find the URL. */
-const isUrlColumn = (header: string) => /landing page|url/i.test(header);
+const isUrlColumn = (header: string) => /landing page|calling page|url/i.test(header);
 
 export function DataTable({ dimensionColumns, signalColumns, rows }: Props) {
   return (

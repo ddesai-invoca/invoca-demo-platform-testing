@@ -11,6 +11,18 @@ The end state is a clickable React app mirroring the Invoca platform, where ever
 data-driven screen reads from one **canonical customer profile** that an AI
 **generation engine** produces per customer.
 
+## How the team ships changes (read first)
+`origin` = ddesai-invoca (the team's FINAL repo; its `main` is the team's STAGING area and what the
+Render sandbox https://invoca-demo-platform-testing.onrender.com/ builds); `fork` = bmccarty322.
+Production is moved from `main` by an outside process. Flow: `npm run start-work` (pull latest main
+into the `staging` branch) -> change with Claude Code on `staging` -> `npm run push-staging` (merges
+newest main, type-checks, pushes to the fork's staging) -> test locally with `npm run serve` ->
+the user approves -> `npm run promote` (asks for YES, pushes staging to origin main) ->
+`npm run check-deploy` and final review on the sandbox. Never push to `main` any other way, never
+work on `main`, keep ONE piece of work in `staging` at a time. Diagram, rules and one-time setup:
+**`docs/TEAM_WORKFLOW.md`**.
+⚠️ Do not commit demos created while testing: they land in `src/data/generated/` and ship to everyone.
+
 ## Tech stack
 - **Vite + React + TypeScript**, **React Router**, **Zod** (schema + validation)
 - Node 25 (runs `.ts` directly for the engine)

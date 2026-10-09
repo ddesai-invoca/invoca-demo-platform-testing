@@ -431,6 +431,44 @@ function feedbackApi(): Plugin {
   }
 }
 
+/* The customer-facing share API (/api/share/*) — twin of the app.use("/api/share") block in
+   server.ts, so a shared demo can be exercised locally. Keep the two in sync. Everything it
+   does is policy in engine/share.ts; this is only the transport. */
+function shareApi(apiKey: string | undefined): Plugin {
+  return {
+    name: 'invoca-share-api',
+    configureServer(server) {
+      server.middlewares.use(async (req, res, next) => {
+        const url = req.url || ''
+        if (!url.startsWith('/api/share/')) return next()
+        try {
+          let raw = ''
+          if (req.method !== 'GET') for await (const chunk of req) raw += chunk
+          const [{ handleShareApi, shareReqFrom }, { realShareDeps }] = await Promise.all([
+            import(pathToFileURL(path.resolve(process.cwd(), 'engine/share.ts')).href),
+            import(pathToFileURL(path.resolve(process.cwd(), 'engine/shareDeps.ts')).href),
+          ])
+          const result = await handleShareApi(
+            req.method || 'GET', url, raw ? JSON.parse(raw) : undefined,
+            shareReqFrom(req.headers, req.socket.remoteAddress), realShareDeps(apiKey),
+          )
+          if (!result) return next()
+          res.statusCode = result.status
+          res.setHeader('Content-Type', 'application/json')
+          res.setHeader('Cache-Control', 'no-store')
+          if (result.setCookie) res.setHeader('Set-Cookie', result.setCookie)
+          res.end(JSON.stringify(result.body))
+        } catch (e: any) {
+          console.error('[share] failed:', e)
+          res.statusCode = 500
+          res.setHeader('Content-Type', 'application/json')
+          res.end(JSON.stringify({ error: 'Something went wrong. Please try again.' }))
+        }
+      })
+    },
+  }
+}
+
 /* Dev-side twin of the production Ingest-O-Matic mount. Materializes each
    subagent's network_config.env + state/ symlink once when the dev server
    starts (mirrors the one-time boot step in server.ts's app.listen callback —
@@ -761,6 +799,7 @@ export default defineConfig(({ mode }) => {
       placeApi(),
       ogImageApi(),
       demoLibraryApi(),
+      shareApi(apiKey),
     feedbackApi(),
       ingestApi(),
       statusApi(),

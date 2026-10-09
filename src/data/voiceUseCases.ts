@@ -1,4 +1,4 @@
-import type { CustomerProfile } from "./schema";
+import type { CustomerProfile } from "./schema.ts";
 
 /* =============================================================================
    voiceUseCases.ts — the branches under the two user-group nodes

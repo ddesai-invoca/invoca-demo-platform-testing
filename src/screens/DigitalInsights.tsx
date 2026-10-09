@@ -1,4 +1,6 @@
+import { useMemo } from "react";
 import { Link } from "react-router-dom";
+import { withCallingPage } from "../data/callingPage";
 import { useProfile } from "../data/ProfileContext";
 import { BarChart } from "../components/BarChart";
 import { DataTable } from "../components/DataTable";
@@ -9,7 +11,8 @@ export function DigitalInsights() {
   const { profile } = useProfile();
   /* Registers this page as the AI scope and returns the slice with any
      edits made ON THIS PAGE overlaid (see usePageData). */
-  const r = usePageData(profile.reports.digitalInsights);
+  const base = useMemo(() => withCallingPage(profile.reports.digitalInsights), [profile.reports.digitalInsights]);
+  const r = usePageData(base);
   const totalInteractions = r.chart.reduce((s, d) => s + d.value, 0);
 
   return (

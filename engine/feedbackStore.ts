@@ -39,7 +39,23 @@ export const isInlineSafeImage = (type: string) =>
   type.startsWith("image/") && type !== "image/svg+xml";
 export const isAllowedType = (type: string) => ALLOWED.has((type || "").toLowerCase());
 
-export type FeedbackKind = "feedback" | "feature";
+export type FeedbackKind = "feedback" | "feature" | "callback";
+
+/* What a CUSTOMER asked for on a shared demo. See engine/callbacks.ts.
+   ⚠️ A callback is stored as a feedback record so it appears in the Inbox the maintainer
+   already reads, with no second board to build or remember to check. Its `submitter` is a
+   synthetic `share:<slug>` identity (never a real address, so no completion email can be
+   sent to it), and `ownerEmail` is who shared the demo, which is what lets a non-admin SE see
+   the callbacks from THEIR OWN demos and nobody else's. */
+export interface CallbackInfo {
+  demoId: string;
+  prospect: string;
+  ownerEmail: string;
+  channel: "sms" | "voice";
+  want: "callback" | "live";        // a scheduled callback, or "connect me to a person now"
+  phone?: string;                   // as the customer gave it, best effort
+  confirmation: string;             // what the agent read back, which carries the time
+}
 
 /* The workflow, in order. `STATUSES[0]` is where everything starts.
 
@@ -81,6 +97,8 @@ export interface FeedbackRecord {
   /* Optional note from whoever triaged it; shown to the submitter. */
   note?: string;
   attachments?: Attachment[];
+  /* Present only on a `callback` record. */
+  callback?: CallbackInfo;
 }
 
 function ensureDir() {

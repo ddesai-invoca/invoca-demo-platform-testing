@@ -35,6 +35,8 @@ import { livekitEnv, mintVoiceToken } from "./engine/livekitToken.ts";
 import { askAssistant } from "./engine/assistant.ts";
 import { installAuth, authEnabled, currentUser } from "./googleAuth.ts";
 import { handleDemoApi, isAdmin } from "./engine/demoApi.ts";
+import { handleShareApi, shareReqFrom } from "./engine/share.ts";
+import { realShareDeps } from "./engine/shareDeps.ts";
 import { handleFeedbackApi } from "./engine/feedbackApi.ts";
 import { handleIngestApi } from "./engine/ingestApi.ts";
 import { materializeIngestAgents, requiredEnvVarNames, NETWORKS } from "./engine/ingestAgentPaths.ts";
@@ -182,6 +184,42 @@ app.post("/api/client-error", (req, res) => {
    ⚠️ PUBLIC. engine/canary.ts::toPublic() decides what is safe to expose, and it
    deliberately omits the target company names and URLs. Do not add them here. */
 app.get("/api/canary", (_req, res) => res.json(canaryPublic()));
+
+/* ⚠️⚠️ THE CUSTOMER-FACING SURFACE — registered BEFORE `installAuth` because a customer has no
+   Google account, and it is the ONLY thing a customer can reach. Everything in
+   engine/share.ts is scoped to one demo, one password and one session; the staff routes
+   below stay behind the gate and never see a customer request. `/api/share/*` that the
+   handler does not own falls through to the gate, i.e. a 401, never to a staff route. */
+app.use("/api/share", async (req, res, next) => {
+  try {
+    const result = await handleShareApi(
+      req.method, req.originalUrl, req.body,
+      shareReqFrom(req.headers, req.socket.remoteAddress), realShareDeps(apiKey),
+    );
+    if (!result) return next();
+    res.setHeader("Cache-Control", "no-store");
+    if (result.setCookie) res.setHeader("Set-Cookie", result.setCookie);
+    res.status(result.status).json(result.body);
+  } catch (e: any) {
+    routeFailed("share", e, { level: isOverloaded(e) ? "record" : "page" });
+    res.status(isOverloaded(e) ? 503 : 500).json({ error: isOverloaded(e) ? "The AI is briefly overloaded. One moment, please resend." : "Something went wrong. Please try again." });
+  }
+});
+
+/* The customer bundle and the few public brand assets it draws, also ahead of the gate.
+   `/d/<slug>` is only a shell: it carries no demo data, which arrives from /api/share/<slug>/demo
+   after the password. The asset allow-list is fonts, the logo and icons: nothing per-prospect,
+   nothing staff. dist-customer/ is a separate build (vite.customer.config.ts), so the bundled
+   prospects are not in anything served here. */
+const DIST_CUSTOMER = path.join(ROOT, "dist-customer");
+app.use("/d-assets", express.static(DIST_CUSTOMER, { index: false, maxAge: "1h" }));
+for (const p of ["/fonts", "/icons"]) app.use(p, express.static(path.join(DIST, p)));
+for (const f of ["/logo.png", "/favicon.svg", "/icons.svg"]) app.get(f, (_req, res) => res.sendFile(path.join(DIST, f), (e) => { if (e) res.status(404).end(); }));
+app.get(/^\/d\/[A-Za-z0-9_-]+(\/.*)?$/, (_req, res) => {
+  res.setHeader("Cache-Control", "no-store");
+  res.setHeader("X-Robots-Tag", "noindex, nofollow");
+  res.sendFile(path.join(DIST_CUSTOMER, "customer.html"), (e) => { if (e) res.status(404).type("text/plain").send("Not found."); });
+});
 
 installAuth(app);
 

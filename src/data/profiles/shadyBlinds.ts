@@ -483,7 +483,7 @@ export const shadyBlinds: CustomerProfile = {
       ],
       breakdowns: [
         {
-          title: "Calls by Source", tableTitle: "Source: Call Outcome Summary",
+          title: "Calls by Source", tableTitle: "Source: Interaction Outcome Summary",
           dimensionColumn: "Marketing Source",
           metricColumns: ["Call Count", "Consultation Scheduled (Percent)", "Job Complete (Percent)", "Total Revenue (Sale Amount)"],
           hasDonut: true, donutTotal: 19317,

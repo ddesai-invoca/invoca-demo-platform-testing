@@ -41,6 +41,13 @@ export interface DemoSummary {
   listedAs?: string;
 }
 
+export interface ShareStatus {
+  slug: string; state: "live" | "soft-expired" | "expired" | "revoked";
+  softExpiresAt: string; hardCutoffAt: string; revokedAt?: string;
+  path: string; password: string | null; agents: string[];
+  supportSource?: "model" | "fallback"; supportError?: string;
+}
+
 export interface DemoCustomizations {
   overrides: Record<string, unknown>;
   tiles: Record<string, unknown[]>;
@@ -72,6 +79,12 @@ interface Ctx {
   createDemo: (profile: unknown, customizations?: DemoCustomizations) => Promise<DemoSummary | null>;
   duplicateDemo: (id: string) => Promise<DemoSummary | null>;
   deleteDemo: (id: string) => Promise<boolean>;
+  /** The customer share (engine/share.ts). Owner or admin only; null when refused or unshared. */
+  getShare: (id: string) => Promise<ShareStatus | null>;
+  /** Create or refresh the share. `support` generates the Support agents on the server. */
+  createShare: (id: string, o: { days?: number; support?: boolean }) => Promise<ShareStatus | null>;
+  extendShare: (id: string, days: number) => Promise<ShareStatus | null>;
+  revokeShare: (id: string) => Promise<ShareStatus | null>;
   saveCustomizations: (id: string, customizations: DemoCustomizations) => Promise<boolean>;
 }
 
@@ -199,6 +212,19 @@ export function DemoLibraryProvider({ children }: { children: ReactNode }) {
     return !!r?.ok;
   }, [refresh]);
 
+  const shareCall = useCallback(async (id: string, method: string, body?: unknown) => {
+    const r = await api<{ share: ShareStatus | null }>(`/api/demos/${id}/share`, { method, ...(body ? { body: JSON.stringify(body) } : {}) });
+    return r?.share ?? null;
+  }, []);
+  const getShare = useCallback((id: string) => shareCall(id, "GET"), [shareCall]);
+  const createShare = useCallback(async (id: string, o: { days?: number; support?: boolean }) => {
+    const r = await shareCall(id, "POST", o);
+    if (r) await refresh();
+    return r;
+  }, [shareCall, refresh]);
+  const extendShare = useCallback((id: string, days: number) => shareCall(id, "PATCH", { days }), [shareCall]);
+  const revokeShare = useCallback((id: string) => shareCall(id, "DELETE"), [shareCall]);
+
   // Fire-and-forget from the caller's perspective; returns false when the server
   // rejected it (e.g. someone else's demo) so the UI can surface that.
   const saveCustomizations = useCallback(async (id: string, customizations: DemoCustomizations) => {
@@ -252,7 +278,7 @@ export function DemoLibraryProvider({ children }: { children: ReactNode }) {
   }, [demos, profiles, openDemo, addProfile]);
 
   return (
-    <Ctx.Provider value={{ me, admin, adminNotice, dismissAdminNotice, demos, loading, available, refresh, isMine, canManage, openDemo, createDemo, duplicateDemo, deleteDemo, saveCustomizations }}>
+    <Ctx.Provider value={{ me, admin, adminNotice, dismissAdminNotice, demos, loading, available, refresh, isMine, canManage, openDemo, createDemo, duplicateDemo, deleteDemo, getShare, createShare, extendShare, revokeShare, saveCustomizations }}>
       {children}
     </Ctx.Provider>
   );

@@ -1223,7 +1223,7 @@ console.log("\nThe built-in SMS workflow template");
   const dInt = smsDrawerFor(p, tree, "intent-0", cfg);
   const dQual = smsDrawerFor(p, tree, "leaf-0-0", cfg);
   const dInf = smsDrawerFor(p, tree, "sub-0-0-0-0", cfg);
-  const dEsc = smsDrawerFor(p, tree, "leaf-1-0", cfg);
+  const dEsc = smsDrawerFor(p, tree, "path-1-0-2", cfg);
   smsDrawerFor(p, tree, "start", cfg) === null
     ? ok("Conversation Start opens nothing, exactly as on the voice page")
     : bad("Conversation Start opens a drawer the real page does not have");
@@ -1484,7 +1484,7 @@ console.log("\nThe built-in SMS workflow template");
     const sibs = added.branches[0].leaves[0].paths!;
     sibs.push({ ...sibs[0], title: "Added", paths: undefined } as never);
     const ids: [string, string][] = [
-      ["leaf-0-0", "qualify"], ["leaf-1-0", "escalate"],
+      ["leaf-0-0", "qualify"], ["leaf-1-0", "qualify"], ["path-1-0-2", "escalate"],
       ["path-0-0-0", "qualify"], ["path-0-0-1", "qualify"],
       ["sub-0-0-0-0", "inform"], ["sub-0-0-1-1", "inform"],
       ["path-0-0-2", "qualify"],
@@ -1635,7 +1635,7 @@ console.log("\nThe built-in SMS workflow template");
        it used to: the four boxes' NAMES stay un-editable, which is what was actually reported
        back in August, and `editGuard` still refuses those. Deleting the check instead would
        have left nothing watching either half. */
-    const lockedLeaf = smsDrawerFor(p, tree, "leaf-1-0", cfg);
+    const lockedLeaf = smsDrawerFor(p, tree, "path-1-0-2", cfg);
     (lockedLeaf?.kind === "action" && !!lockedLeaf.actionSlot)
       ? ok("every action drawer offers the picker, locked chrome leaves included")
       : bad("a locked leaf still has no action picker");
@@ -1695,9 +1695,9 @@ console.log("\nThe built-in SMS workflow template");
       ? ok("the invented 'Select a destination...' combobox is gone")
       : bad("the destination is a fabricated combobox again");
 
-    const esc = smsDrawerFor(p, tree, "leaf-1-0", cfg);
+    const esc = smsDrawerFor(p, tree, "path-1-0-2", cfg);
     (esc?.kind === "action" && esc.destinationPlaceholder && esc.edits?.destination
-      && /^sms\.extra__leaf-1-0__destination$/.test(esc.edits.destination))
+      && /^sms\.extra__path-1-0-2__destination$/.test(esc.edits.destination))
       ? ok("the destination has somewhere to write, on a flat key whose parent exists")
       : bad("the destination is editable with nowhere to write, or writes to a nested path");
 
@@ -1707,7 +1707,7 @@ console.log("\nThe built-in SMS workflow template");
       && JSON.stringify(esc.signalChoices) === JSON.stringify(sigs))
       ? ok(`the signal picker offers this prospect's own ${sigs.length} signals`)
       : bad("the signal options are not the prospect's own");
-    (esc?.kind === "action" && esc.edits?.signal === "sms.extra__leaf-1-0__signal")
+    (esc?.kind === "action" && esc.edits?.signal === "sms.extra__path-1-0-2__signal")
       ? ok("the chosen signal has somewhere to write")
       : bad("the signal picker writes nowhere");
     {

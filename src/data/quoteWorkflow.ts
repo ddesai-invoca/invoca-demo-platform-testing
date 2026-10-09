@@ -1,4 +1,5 @@
 import type { CustomerProfile, ExtraWorkflow } from "./schema";
+import { CUSTOMER } from "../customer/mode";
 import { useQuoteCaptures, type LsaQuote } from "./QuoteCaptureContext";
 
 /* =============================================================================
@@ -277,5 +278,7 @@ export function extraWorkflowsFor(profile: CustomerProfile, quotes: LsaQuote[]):
  * runtime cycle of exactly the kind `leadSlug` was moved to kill.
  */
 export function useExtraWorkflows(profile: CustomerProfile): ExtraWorkflow[] {
-  return extraWorkflowsFor(profile, useQuoteCaptures().capturedFor(profile.id));
+  const all = extraWorkflowsFor(profile, useQuoteCaptures().capturedFor(profile.id));
+  /* Customer build: no extra workflows (see src/customer/mode.ts). Dead code in the staff app. */
+  return CUSTOMER ? [] : all;
 }

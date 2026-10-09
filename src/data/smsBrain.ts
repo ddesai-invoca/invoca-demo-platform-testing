@@ -27,7 +27,7 @@
        agent.
    ============================================================================= */
 
-import type { CustomerProfile, AgentConfigView } from "./schema";
+import type { CustomerProfile, AgentConfigView } from "./schema.ts";
 
 /** Mirrors `SmsWorkflowFlow` in `workflowDrawers.ts`, declared here so the brain type is local. */
 export interface SmsFlowNodeShape {
@@ -50,6 +50,10 @@ type AgentConfig = Partial<AgentConfigView> | undefined | null;
 type ExtraWorkflow = NonNullable<Profile["reports"]["extraWorkflows"]>[number];
 
 export interface SmsBrain {
+  /** A customer SUPPORT workflow's playbook. Its presence selects the containment-first
+   *  support prompt on the chat engine, ahead of every other field here. */
+  supportPlaybook?: NonNullable<ExtraWorkflow["support"]>;
+  smsGreeting?: string;
   customSystem?: string;
   openingMessage?: string;
   agentLabel?: string;
@@ -282,6 +286,9 @@ export function buildSmsBrain(
       || wf?.openingMessage
       || defaultGreeting(profile.customerName, ac?.smsPlaybook),
     agentLabel: wf?.label,
+    /* ⚠️ A SUPPORT workflow is its own agent end to end (engine/supportPrompt.ts), so the
+       playbook rides on the brain and the greeting is the workflow's own line. */
+    ...(wf?.support ? { supportPlaybook: wf.support, smsGreeting: wf.openingMessage } : {}),
     customerName: profile.customerName,
     industry: profile.industry,
     rules: ac?.brandConversationRules ?? [],
@@ -326,7 +333,7 @@ export async function askSmsAgent(brain: SmsBrain, history: { role: "user" | "as
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ brain, messages: history }),
       });
-      const data = await res.json().catch(() => ({}) as any);
+      const data: any = await res.json().catch(() => ({}));
       if (res.ok) return String(data.reply ?? "").replace(/\*\*|__|`/g, "") || "…";
       lastErr = new Error(data?.error || "Chat failed.");
       if (res.status < 500 && res.status !== 429) break;   // non-transient → stop

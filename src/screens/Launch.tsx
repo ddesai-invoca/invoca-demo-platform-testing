@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
+import { SharePanel } from "../components/SharePanel";
 import { useNavigate } from "react-router-dom";
 import { useProfile } from "../data/ProfileContext";
 import { useDemoLibrary } from "../data/DemoLibraryContext";
@@ -146,7 +147,7 @@ interface Entry {
 
 export function Launch() {
   const { profiles, addProfile, removeProfile, setProfileId } = useProfile();
-  const { demos, me, admin, isMine, openDemo, createDemo, duplicateDemo, deleteDemo } = useDemoLibrary();
+  const { demos, me, admin, available, isMine, openDemo, createDemo, duplicateDemo, deleteDemo } = useDemoLibrary();
   const { hydrateDemo } = useAiAssistant();
   const navigate = useNavigate();
 
@@ -161,6 +162,10 @@ export function Launch() {
   // Delete confirmation + which row is mid-open. Each library dropdown owns its
   // own search + open state (see LibraryPicker below).
   const [pendingDelete, setPendingDelete] = useState<Entry | null>(null);
+  /* The customer link: an opt-in at creation, and a panel reachable from any demo you own. */
+  const [shareOnCreate, setShareOnCreate] = useState(false);
+  const [shareDays, setShareDays] = useState(30);
+  const [sharePanel, setSharePanel] = useState<{ id: string; name: string; auto?: boolean; days?: number; thenOpen?: boolean } | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
 
   // While generating, tick every 0.5s so the % bar can creep smoothly even when a
@@ -283,6 +288,16 @@ export function Launch() {
               <span className="material-icons">content_copy</span>
             </button>
           )}
+          {e.inLibrary && (e.mine || admin) && (
+            <button
+              className="prospect-dup"
+              title={`Customer link for ${e.name}`}
+              aria-label={`Customer link for ${e.name}`}
+              onClick={(ev) => { ev.stopPropagation(); setSharePanel({ id: e.id, name: e.name }); }}
+            >
+              <span className="material-icons">share</span>
+            </button>
+          )}
           {canDelete && (
             <button
               className="prospect-delete"
@@ -379,6 +394,12 @@ export function Launch() {
       const saved = demo ? { ...profile, id: demo.id } : profile;
       addProfile(saved);
       if (demo) hydrateDemo(demo.id, { overrides: {}, tiles: {} }, true, demo.creator);
+      if (demo && shareOnCreate) {
+        /* Show the finished link and password first; the demo opens when the panel closes. */
+        setBusy(false);
+        setSharePanel({ id: demo.id, name: trimmedName, auto: true, days: shareDays, thenOpen: true });
+        return;
+      }
       open(saved.id);
     } catch (err: any) {
       setError(err?.message || "Something went wrong generating this prospect.");
@@ -444,6 +465,13 @@ export function Launch() {
                 placeholder="e.g. https://www.shadyblindsnow.com"
               />
             </label>
+            {available && (
+              <label className="launch-share">
+                <input type="checkbox" checked={shareOnCreate} onChange={(e) => setShareOnCreate(e.target.checked)} />
+                Also create a shareable customer demo
+                {shareOnCreate && <>: live agents for <input type="number" min={1} max={365} value={shareDays} onChange={(e) => setShareDays(Number(e.target.value) || 30)} /> days</>}
+              </label>
+            )}
             {error && <div className="launch-error">{error}</div>}
             <button className="launch-btn" type="submit">Launch demo</button>
           </form>
@@ -465,6 +493,18 @@ export function Launch() {
           </div>
         )}
       </div>
+
+      {sharePanel && (
+        <SharePanel
+          demoId={sharePanel.id} prospect={sharePanel.name} auto={sharePanel.auto} days={sharePanel.days}
+          onClose={async () => {
+            const sp = sharePanel;
+            setSharePanel(null);
+            /* Sharing added the Support workflows to the saved demo; reload it so this browser's copy has them. */
+            if (sp.thenOpen) await openEntry({ id: sp.id, name: sp.name, industry: "", mine: true, inLibrary: true, group: "mine" } as Entry);
+          }}
+        />
+      )}
 
       {/* Delete confirmation */}
       {pendingDelete && (

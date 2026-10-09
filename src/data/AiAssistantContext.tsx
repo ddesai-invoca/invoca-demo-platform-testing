@@ -1,4 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from "react";
+import { CUSTOMER } from "../customer/mode";
 import { getByPath, isLockedEdit, isStructuralChange } from "./editGuard";
 
 /* Global state for the "Ask AI" dashboard assistant. Holds:
@@ -304,7 +305,9 @@ export function AiAssistantProvider({ children }: { children: ReactNode }) {
     return () => clearTimeout(t);
   }, [store, activeDemo]);
 
-  const openDrawer = useCallback((f?: AssistantFocus) => { setFocus(f ?? null); setOpen(true); }, []);
+  /* Customer build: no AI assist anywhere. The sparkles are also hidden in CSS, but this is the
+     guarantee — no code path can open the drawer. Dead code in the staff app. */
+  const openDrawer = useCallback((f?: AssistantFocus) => { if (CUSTOMER) return; setFocus(f ?? null); setOpen(true); }, []);
   const closeDrawer = useCallback(() => setOpen(false), []);
 
   const registerScope = useCallback((s: { key: string; customerName: string; baseTitle: string; baseData: unknown; questionPath?: string; greetingFallback?: string; greetingWins?: boolean; linkKey?: string; linkAs?: string }) => {
