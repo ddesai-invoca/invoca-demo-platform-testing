@@ -420,6 +420,21 @@ export function enqueueIngestJob(input: RunJobInput): { runId: string } {
 const generatingNow = new Set<Network>();
 const sendingNow = new Set<Network>();
 
+/** Serializes every scheduled dispatch across ALL networks, one Agent SDK
+ *  session at a time. Investigated live 2026-10-13: every scheduled run,
+ *  for every network, every day since Phase 2 shipped, sat "running" for
+ *  ~24h with ZERO Agent SDK messages ever produced (confirmed via the
+ *  message-level audit trail below — not one line was ever written for any
+ *  of them), until the next day's restart reconciled it as failed. A solo
+ *  ad-hoc dispatch, run the exact same way through the exact same
+ *  runIngestJob(), worked immediately. The one structural difference: the
+ *  scheduler used to kick off all six networks' sessions at once
+ *  (unawaited), within milliseconds of each other. Chaining them is the
+ *  fix under test — a later network's dispatch just waits its turn instead
+ *  of racing five others to start a Claude Agent SDK session in the same
+ *  process at the same instant. */
+let dispatchChain: Promise<void> = Promise.resolve();
+
 /** Direct-shells trend_batch.py to build a network's whole upload batch.
  *  Not an agent session — this is pure deterministic row/ID math, nothing
  *  here calls for judgment. */
@@ -538,10 +553,18 @@ async function dispatchNextUpload(network: Network): Promise<void> {
   }
 }
 
-/** Scheduler entry point: each network fires independently off its own
- *  cadence/trend/volume settings, guarded per-network so a 10-minute tick
+/** Scheduler entry point: each network's own cadence/trend/volume settings
+ *  decide WHETHER it fires today, guarded per-network so a 10-minute tick
  *  re-evaluating the same firing day doesn't double-dispatch (persisted, so
- *  a restart on the same day doesn't either). */
+ *  a restart on the same day doesn't either). The decision of which
+ *  networks fire today is made eagerly, synchronously, for all of them in
+ *  this tick — but the actual dispatches are chained onto `dispatchChain`
+ *  rather than fired concurrently, so they run one network's Agent SDK
+ *  session at a time (see the note on `dispatchChain`). A network's own
+ *  settings are re-read fresh when its turn in the chain actually comes
+ *  up, so one queued behind a long-running sibling still reflects
+ *  whatever is true by the time it runs (e.g. cadence turned off in the
+ *  meantime, or "today" having rolled over). */
 export function maybeDispatchScheduled(now: Date): void {
   for (const network of NETWORKS) {
     const settings = getNetworkSettings(network);
@@ -551,7 +574,13 @@ export function maybeDispatchScheduled(now: Date): void {
     const key = `${settings.cadence}:${now.toISOString().slice(0, 10)}`;
     if (key === settings.lastFiredKey) continue;
     saveNetworkSettings(network, { ...settings, lastFiredKey: key });
-    void dispatchNextUpload(network);
+    dispatchChain = dispatchChain.then(() => dispatchNextUpload(network)).catch((e) => {
+      void alert({
+        key: `ingest-schedule-dispatch:${network}`,
+        title: `Scheduled ingest dispatch failed for ${NETWORK_LABEL[network]}`,
+        detail: String((e as Error)?.message || e),
+      });
+    });
   }
 }
 
