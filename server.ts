@@ -40,7 +40,7 @@ import { realShareDeps } from "./engine/shareDeps.ts";
 import { handleFeedbackApi } from "./engine/feedbackApi.ts";
 import { handleIngestApi } from "./engine/ingestApi.ts";
 import { materializeIngestAgents, requiredEnvVarNames, NETWORKS } from "./engine/ingestAgentPaths.ts";
-import { maybeDispatchScheduled, reconcileStaleRuns, reconcileStaleGenerations } from "./engine/ingestOrchestrator.ts";
+import { maybeDispatchScheduled, reconcileStaleRuns, reconcileStaleGenerations, reconcilePartialRuns } from "./engine/ingestOrchestrator.ts";
 import { mailConfigured } from "./engine/mailer.ts";
 import { DATA_DIR, isPersistent } from "./engine/demoStore.ts";
 import { alert, alertSummary, type AlertLevel } from "./engine/alerts.ts";
@@ -911,6 +911,10 @@ function scheduleIngest(): void {
     running = true;
     try {
       maybeDispatchScheduled(new Date());
+      // A "partial" run (the agent reported INCOMPLETE_IN_PROGRESS and its
+      // session ended) may have a background ingest.py still sending —
+      // check whether any have since finished and correct their numbers.
+      reconcilePartialRuns();
     } catch (e) {
       routeFailed("ingest-schedule-tick", e, { title: "Scheduled ingest tick failed" });
     } finally {
