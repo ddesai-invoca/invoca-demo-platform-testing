@@ -170,13 +170,16 @@ export async function handleIngestApi(
     const end = String(body?.end ?? "");
     const v = validateAdhocRange(start, end);
     if (!v.ok) return err(400, v.error);
-    const { runId } = enqueueIngestJob({
+    const result = enqueueIngestJob({
       network,
       dateRange: { start, end },
       requestor: { email: user.email, name: user.name },
       testMode: !!body?.testMode,
     });
-    return ok({ runId });
+    if ("busy" in result) {
+      return err(409, `${NETWORK_LABEL[network]} already has a request running — wait for it to finish before starting another.`);
+    }
+    return ok({ runId: result.runId });
   }
 
   if (p === "/api/ingest/runs" && method === "GET") {

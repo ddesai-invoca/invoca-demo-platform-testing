@@ -398,11 +398,33 @@ export async function runIngestJob(input: RunJobInput, id: string = newRunId(inp
 
 // ---- fire-and-forget job runner --------------------------------------------
 
+// `sendingNow` is the single per-network "an Agent SDK session already owns
+// this network" guard, shared by BOTH the ad-hoc path below and the
+// scheduled path further down. Investigated live 2026-10-13: two ad-hoc
+// "Add calls" submissions for the same network, 8 minutes apart, left the
+// FIRST one stuck "running" with zero Agent SDK messages ever produced —
+// the exact same signature as the scheduled-dispatch bug, just triggered by
+// same-network concurrency instead of cross-network concurrency. The
+// ad-hoc path had no concurrency guard at all before this; a second
+// submission for a busy network is now rejected outright (409) rather than
+// silently started and left to hang.
+const generatingNow = new Set<Network>();
+const sendingNow = new Set<Network>();
+
 const inFlight = new Map<string, Promise<RunRecord>>();
 
-export function enqueueIngestJob(input: RunJobInput): { runId: string } {
+export function isNetworkBusy(network: Network): boolean {
+  return sendingNow.has(network);
+}
+
+export function enqueueIngestJob(input: RunJobInput): { runId: string } | { busy: true } {
+  if (sendingNow.has(input.network)) return { busy: true };
+  sendingNow.add(input.network);
   const id = newRunId(input.network);
-  const p = runIngestJob(input, id).finally(() => inFlight.delete(id));
+  const p = runIngestJob(input, id).finally(() => {
+    inFlight.delete(id);
+    sendingNow.delete(input.network);
+  });
   inFlight.set(id, p);
   return { runId: id };
 }
@@ -416,9 +438,6 @@ export function enqueueIngestJob(input: RunJobInput): { runId: string } {
 // network's upload batch in one shot, then the existing agent-invocation
 // pipeline (runIngestJob/buildTaskPrompt) just sends whichever cached file
 // is next, exactly as it already knows how to send an ad-hoc CSV.
-
-const generatingNow = new Set<Network>();
-const sendingNow = new Set<Network>();
 
 /** Serializes every scheduled dispatch across ALL networks, one Agent SDK
  *  session at a time. Investigated live 2026-10-13: every scheduled run,
