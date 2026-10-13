@@ -255,6 +255,7 @@ export function reconcilePartialRuns(): void {
     r.status = "done";
     r.finishedAt = new Date().toISOString();
     saveRun(r);
+    releaseNetworkBusy(r.network); // the background send that was holding this network busy has now gone quiet
   }
 }
 
@@ -488,33 +489,57 @@ export async function runIngestJob(input: RunJobInput, id: string = newRunId(inp
 
 // ---- fire-and-forget job runner --------------------------------------------
 
-// `sendingNow` is the single per-network "an Agent SDK session already owns
-// this network" guard, shared by BOTH the ad-hoc path below and the
-// scheduled path further down. Investigated live 2026-10-13: two ad-hoc
-// "Add calls" submissions for the same network, 8 minutes apart, left the
-// FIRST one stuck "running" with zero Agent SDK messages ever produced —
-// the exact same signature as the scheduled-dispatch bug, just triggered by
-// same-network concurrency instead of cross-network concurrency. The
-// ad-hoc path had no concurrency guard at all before this; a second
-// submission for a busy network is now rejected outright (409) rather than
-// silently started and left to hang.
+// `sendingNow` is the single per-network "something already owns this
+// network's send" guard, shared by the ad-hoc path below, the scheduled
+// path further down, AND reconcilePartialRuns above. Investigated live
+// 2026-10-13, in two stages:
+//   1. Two ad-hoc "Add calls" submissions for the same network, 8 minutes
+//      apart, left the FIRST one stuck "running" with zero Agent SDK
+//      messages ever produced — the ad-hoc path had no concurrency guard
+//      at all. A second submission for a busy network is now rejected
+//      outright (409) rather than silently started and left to hang.
+//   2. That alone wasn't enough: two LATER ad-hoc submissions, 3 minutes
+//      apart, both ran for real — because the first one's Agent SDK
+//      session reported INCOMPLETE_IN_PROGRESS and ended within a couple
+//      of minutes, releasing "busy" long before its background ingest.py
+//      actually finished sending. Both ended up writing to the same
+//      network's ledger file at once, with no locking between them. So a
+//      run that comes back "partial" now keeps its network busy — only
+//      reconcilePartialRuns releases it, once the ledger's gone quiet.
 const generatingNow = new Set<Network>();
 const sendingNow = new Set<Network>();
 
-const inFlight = new Map<string, Promise<RunRecord>>();
+const inFlight = new Map<string, Promise<unknown>>();
 
 export function isNetworkBusy(network: Network): boolean {
   return sendingNow.has(network);
+}
+
+/** Releases a network's busy flag. Separated out from a plain `sendingNow.
+ *  delete()` because a caller must think about WHEN it's safe to call this:
+ *  a "partial" run's Agent SDK session ending is NOT that moment (see the
+ *  note above `reconcilePartialRuns`) — only reconcilePartialRuns calls this
+ *  for a run that finished partial, once the ledger's gone quiet. */
+function releaseNetworkBusy(network: Network): void {
+  sendingNow.delete(network);
 }
 
 export function enqueueIngestJob(input: RunJobInput): { runId: string } | { busy: true } {
   if (sendingNow.has(input.network)) return { busy: true };
   sendingNow.add(input.network);
   const id = newRunId(input.network);
-  const p = runIngestJob(input, id).finally(() => {
-    inFlight.delete(id);
-    sendingNow.delete(input.network);
-  });
+  const p = runIngestJob(input, id)
+    .then((rec) => {
+      // A "partial" result means the agent's own session ended but its
+      // background ingest.py may still be sending — stay busy until
+      // reconcilePartialRuns confirms it's actually gone quiet. Investigated
+      // live 2026-10-13: without this, two ad-hoc requests submitted just a
+      // few minutes apart both ran for real, both writing to the same
+      // network's ledger file at once (no locking between them).
+      if (rec.status !== "partial") releaseNetworkBusy(input.network);
+    })
+    .catch(() => releaseNetworkBusy(input.network)) // defensive: runIngestJob always resolves in practice, but never wedge a network forever on an unexpected throw
+    .finally(() => inFlight.delete(id));
   inFlight.set(id, p);
   return { runId: id };
 }
@@ -630,6 +655,7 @@ async function restampFile(network: Network, filePath: string, endDate: string, 
 async function dispatchNextUpload(network: Network): Promise<void> {
   if (sendingNow.has(network)) return;
   sendingNow.add(network);
+  let stayBusy = false; // flipped true only when the run comes back "partial" — see releaseNetworkBusy's note
   try {
     let settings = getNetworkSettings(network);
     if (settings.cadence === "off") return;
@@ -644,13 +670,14 @@ async function dispatchNextUpload(network: Network): Promise<void> {
     const today = new Date().toISOString().slice(0, 10);
     try {
       await restampFile(network, entry.path, today, cadenceWindowDays(cadence));
-      await runIngestJob({
+      const rec = await runIngestJob({
         network,
         dateRange: { start: today, end: today }, // display only — the file's own rows carry the real spread across the cadence window
         requestor: "Mr. Roboto",
         testMode: false,
         cachedFile: entry.path,
       });
+      stayBusy = rec.status === "partial";
     } finally {
       const fresh = getNetworkSettings(network);
       if (fresh.batch) {
@@ -658,7 +685,7 @@ async function dispatchNextUpload(network: Network): Promise<void> {
       }
     }
   } finally {
-    sendingNow.delete(network);
+    if (!stayBusy) sendingNow.delete(network);
   }
 }
 
