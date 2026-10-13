@@ -166,6 +166,96 @@ export interface RunRecord {
   creditsUsedUsd: number | null;
   agentSessionId?: string;
   rawFinalText?: string;
+  /** The last ledger-derived "new rows since this run started" count a
+   *  reconciliation pass saw — used to detect the background script going
+   *  quiet (two checks ten minutes apart with no further growth) versus
+   *  still genuinely sending. */
+  reconcileProgress?: number;
+  reconcileCheckedAt?: string;
+}
+
+// ---- reconciling a "partial" run against the real ledger --------------------
+//
+// Investigated live 2026-10-13: when an agent reports INCOMPLETE_IN_PROGRESS
+// (per its own AGENT_PROMPT.md instructions, for a full send that's taking
+// longer than it's willing to keep the session open), its Agent SDK session
+// ends right there — but the ingest.py process it started keeps running as
+// a detached background process, independent of that session, and keeps
+// appending to state/ingest_state.json as it actually finishes the send.
+// Nothing was ever going back to find out what it did. A "Partial" run
+// confirmed to have fully succeeded in the background, 416 more calls
+// accepted after the agent's own last snapshot, with the dashboard still
+// frozen on the stale number.
+//
+// Rather than parse the agent's own prose for a CSV filename (fragile, and
+// ad-hoc runs let the agent name its own file), every ledger entry already
+// carries a timestamp (ingest.py's `ts`), so "what did THIS run's send do"
+// is just "every ledger entry written at or after this run's startedAt" —
+// safe to attribute to this run specifically because the per-network
+// concurrency guard (sendingNow) means at most one send is ever writing to
+// a given network's ledger at a time. NOTE: ingest.py's save_state() writes
+// with `sort_keys=True`, so the ledger's key order is alphabetical by call
+// ID, not insertion order — the timestamp on each entry, not its position
+// in the file, is the only thing that's safe to filter on here.
+const LEDGER_OK_CODES = new Set([201, 202]); // mirrors ingest.py's OK_CODES
+
+interface LedgerEntry { code: number; ts: string; source_csv?: string; error?: unknown }
+
+function readLedger(network: Network): Record<string, LedgerEntry> {
+  try {
+    const raw = fs.readFileSync(path.join(agentDir(network), "state", "ingest_state.json"), "utf8");
+    return JSON.parse(raw);
+  } catch {
+    return {};
+  }
+}
+
+/** Reconciles every "partial" run against its network's real ledger. Called
+ *  on the same 10-minute tick as the scheduler (see server.ts): on each
+ *  pass, counts ledger entries written since the run's startedAt. If that
+ *  count grew since the last pass, the background send is still working —
+ *  just note the new count and check again next tick. If it's unchanged
+ *  since the last pass (ten quiet minutes from a script that saves its
+ *  state after every single call), the background process is presumed
+ *  finished (or dead) either way, and the record is finalized with the
+ *  real numbers instead of the agent's last, stale snapshot. */
+export function reconcilePartialRuns(): void {
+  for (const r of listRuns()) {
+    if (r.status !== "partial") continue;
+    const startedAtMs = new Date(r.startedAt).getTime();
+    const ledger = readLedger(r.network);
+    const newEntries = Object.values(ledger)
+      .filter((e) => !isNaN(new Date(e.ts).getTime()) && new Date(e.ts).getTime() >= startedAtMs);
+    const newTotal = newEntries.length;
+
+    if (r.reconcileProgress === undefined || newTotal > r.reconcileProgress) {
+      r.reconcileProgress = newTotal;
+      r.reconcileCheckedAt = new Date().toISOString();
+      saveRun(r);
+      continue; // first look, or still growing — check again next tick
+    }
+
+    // Unchanged since the last tick: the background send has gone quiet.
+    const newOk = newEntries.filter((e) => LEDGER_OK_CODES.has(e.code)).length;
+    const newFail = newTotal - newOk;
+    const byCode = new Map<number, number>();
+    for (const e of newEntries) if (!LEDGER_OK_CODES.has(e.code)) byCode.set(e.code, (byCode.get(e.code) ?? 0) + 1);
+
+    r.callsIngested = newOk;
+    r.errors = newFail;
+    r.errorDetails = [...byCode.entries()].map(([code, count]) => ({
+      code: String(code),
+      count,
+      reason: `${count} call(s) failed with code ${code} during the background send (seen after the agent's own session had already ended).`,
+      explanation: "The agent reported an in-progress snapshot and stopped watching; this network's ledger (state/ingest_state.json) is what actually recorded the send finishing, which is where this number comes from instead.",
+      remediation: code === 0
+        ? "Check this network's state/ingest_state.json for these IDs' recorded exception."
+        : `Review why Invoca returned ${code} for these calls before retrying.`,
+    }));
+    r.status = "done";
+    r.finishedAt = new Date().toISOString();
+    saveRun(r);
+  }
 }
 
 function runFile(id: string): string { return path.join(RUNS_DIR, `${id}.json`); }
