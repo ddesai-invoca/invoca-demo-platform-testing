@@ -647,8 +647,11 @@ async function restampFile(network: Network, filePath: string, endDate: string, 
 
 /** Sends one network's next upload: regenerates a fresh cycle first if the
  *  current batch is exhausted (decision #8 — brand-new IDs, never a replay
- *  of the first file), restamps that file's dates for today, then runs the
- *  existing agent pipeline against it exactly as an ad-hoc request. Always
+ *  of the first file), restamps that file's dates for the most recently
+ *  fully-elapsed day (see the note on `sendDate` below — NOT literally
+ *  "today", which is always still almost entirely in the future the moment
+ *  the scheduler fires), then runs the existing agent pipeline against it
+ *  exactly as an ad-hoc request. Always
  *  advances the cursor in `finally`, win or lose — a failed day's content
  *  doesn't block tomorrow's, the same way a failed ad-hoc run doesn't block
  *  the next one. */
@@ -667,12 +670,25 @@ async function dispatchNextUpload(network: Network): Promise<void> {
     if (!settings.batch) return; // generation failed; already alerted in regenerateBatch
 
     const entry = settings.batch.files[settings.batch.nextUploadIndex];
-    const today = new Date().toISOString().slice(0, 10);
+    // The most recently FULLY ELAPSED day, not "today" — confirmed live
+    // 2026-10-14: every network's test batch was rejected by Invoca with
+    // "call.start_time ... Must not be in the future", because the
+    // scheduler always fires right at UTC midnight (when a new day is
+    // first detected), and restamping to "today" at that exact moment
+    // spreads timestamps across a day that has had ~0 minutes to elapse —
+    // nearly all of it is still in the future, regardless of which
+    // timezone "today" is computed in. Invoca's network timezone
+    // (America/New_York, ~4-5h behind UTC) makes this bite every single
+    // time the scheduler fires, not just occasionally. Restamping to the
+    // day that just fully ended guarantees every timestamp in the window
+    // is safely in the past, independent of what hour the scheduler
+    // happens to actually run at.
+    const sendDate = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
     try {
-      await restampFile(network, entry.path, today, cadenceWindowDays(cadence));
+      await restampFile(network, entry.path, sendDate, cadenceWindowDays(cadence));
       const rec = await runIngestJob({
         network,
-        dateRange: { start: today, end: today }, // display only — the file's own rows carry the real spread across the cadence window
+        dateRange: { start: sendDate, end: sendDate }, // display only — the file's own rows carry the real spread across the cadence window
         requestor: "Mr. Roboto",
         testMode: false,
         cachedFile: entry.path,
