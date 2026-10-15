@@ -62,6 +62,39 @@ function startOfDay(d: Date): Date { return new Date(d.getFullYear(), d.getMonth
 function lastDayOfPrevMonth(d: Date): Date { return new Date(d.getFullYear(), d.getMonth(), 0); }
 function firstDayOfMonth(y: number, m: number): Date { return new Date(y, m, 1); }
 
+/** The most recently FULLY ELAPSED calendar day in Invoca's own network
+ *  timezone (America/New_York) — used to restamp a scheduled upload's call
+ *  times so none of them can land in the future. Two real bugs here, both
+ *  confirmed live and both worth the detail:
+ *
+ *  1. Restamping to literal "today" put every row in the future, because
+ *     the scheduler always fires right at UTC midnight — the instant a new
+ *     day is first detected — so "today" has had ~0 minutes to elapse
+ *     (confirmed 2026-10-14: all five networks' test batches rejected,
+ *     every row dated the day that had JUST started).
+ *  2. The first fix, `new Date(Date.now() - 24*60*60*1000)`, looked like
+ *     "yesterday" but wasn't: subtracting exactly 24 UTC HOURS from a
+ *     dispatch that fires at UTC midnight (~8pm Eastern, since Eastern is
+ *     UTC-4/-5) lands back on Eastern's CURRENT day, not Eastern's
+ *     yesterday — the UTC math and the Eastern offset don't cancel the way
+ *     a blind subtraction implies. Confirmed 2026-10-15: every network's
+ *     late-evening rows (roughly 8pm-midnight Eastern) were still rejected
+ *     as future, because that window genuinely hadn't happened yet at the
+ *     ~8pm Eastern moment the batch was restamped and sent.
+ *
+ *  This computes Eastern's own calendar date for "now", then steps back
+ *  one whole EASTERN day — which has, by construction, been over for
+ *  hours by the time any scheduled dispatch (always ~8pm Eastern) runs.
+ *  The day-arithmetic anchors to noon UTC purely to keep `setUTCDate` away
+ *  from any date's own midnight boundary; only the DATE component (not the
+ *  time) is ever used. */
+function easternYesterday(): string {
+  const easternToday = new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York" }).format(new Date());
+  const anchored = new Date(`${easternToday}T12:00:00Z`);
+  anchored.setUTCDate(anchored.getUTCDate() - 1);
+  return anchored.toISOString().slice(0, 10);
+}
+
 export interface DateRange { start: string; end: string }
 
 /** Ad-hoc request bounds: not in the future, not more than 2 years old. Pure —
@@ -670,20 +703,7 @@ async function dispatchNextUpload(network: Network): Promise<void> {
     if (!settings.batch) return; // generation failed; already alerted in regenerateBatch
 
     const entry = settings.batch.files[settings.batch.nextUploadIndex];
-    // The most recently FULLY ELAPSED day, not "today" — confirmed live
-    // 2026-10-14: every network's test batch was rejected by Invoca with
-    // "call.start_time ... Must not be in the future", because the
-    // scheduler always fires right at UTC midnight (when a new day is
-    // first detected), and restamping to "today" at that exact moment
-    // spreads timestamps across a day that has had ~0 minutes to elapse —
-    // nearly all of it is still in the future, regardless of which
-    // timezone "today" is computed in. Invoca's network timezone
-    // (America/New_York, ~4-5h behind UTC) makes this bite every single
-    // time the scheduler fires, not just occasionally. Restamping to the
-    // day that just fully ended guarantees every timestamp in the window
-    // is safely in the past, independent of what hour the scheduler
-    // happens to actually run at.
-    const sendDate = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+    const sendDate = easternYesterday();
     try {
       await restampFile(network, entry.path, sendDate, cadenceWindowDays(cadence));
       const rec = await runIngestJob({
