@@ -1,5 +1,7 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
+import { IngestReportChart } from "../components/IngestReportChart";
+import { dailySeries, estimateForPeriod, fiscalPeriodOf, fiscalYearLabel, type FiscalEstimate } from "../data/ingestReporting";
 
 /* =============================================================================
    IngestOMatic — /ingest-o-matic
@@ -108,6 +110,39 @@ function draftOf(s: NetworkSettings): Draft {
 }
 function draftEquals(a: Draft, b: Draft): boolean {
   return a.cadence === b.cadence && a.trend === b.trend && a.trendPeriod === b.trendPeriod && a.callsPerUpload === b.callsPerUpload;
+}
+
+function EstimateCard({ title, estimate }: { title: string; estimate: FiscalEstimate }) {
+  return (
+    <div className="ing-est-card">
+      <h3 className="ing-est-title">{title}</h3>
+      <p className="ing-est-sub">
+        Day {estimate.daysElapsed} of {estimate.daysTotal} — {estimate.periodStart.toISOString().slice(0, 10)} to{" "}
+        {estimate.periodEnd.toISOString().slice(0, 10)}
+      </p>
+      <div className="ing-est-rows">
+        <div className="ing-est-row">
+          <span className="ing-est-label">Calls ingested</span>
+          <span className="ing-est-actual">{estimate.actualCalls.toLocaleString()} so far</span>
+          <span className="ing-est-proj">~{Math.round(estimate.projectedCalls).toLocaleString()} projected</span>
+        </div>
+        <div className="ing-est-row">
+          <span className="ing-est-label">Agent cost</span>
+          <span className="ing-est-actual">{money(estimate.actualCostUsd)} so far</span>
+          <span className="ing-est-proj">~{money(estimate.projectedCostUsd)} projected</span>
+        </div>
+        <div className="ing-est-row">
+          <span className="ing-est-label">Errors</span>
+          <span className="ing-est-actual">{estimate.actualErrors.toLocaleString()} so far</span>
+          <span className="ing-est-proj">—</span>
+        </div>
+      </div>
+      <p className="ing-est-note">
+        Projected = actual to date plus this period's own average daily pace, extrapolated across the days remaining.
+        Not a forecast — just today's run-rate carried forward.
+      </p>
+    </div>
+  );
 }
 
 function ConfirmDialog({ message, busy, onCancel, onConfirm }: {
@@ -351,6 +386,18 @@ export function IngestOMatic() {
     }
   }
 
+  // Derived purely from `runs`, which /api/ingest/runs already loads in full
+  // for the Ingestion log below — no separate reporting endpoint needed.
+  const report = useMemo(() => {
+    const now = new Date();
+    const { fiscalYear, quarter, quarterStart, quarterEnd, yearStart, yearEnd } = fiscalPeriodOf(now);
+    const fyLabel = fiscalYearLabel(fiscalYear);
+    const chartPoints = dailySeries(runs, yearStart, now);
+    const quarterEstimate = estimateForPeriod(runs, quarterStart, quarterEnd, now, `Q${quarter} ${fyLabel}`);
+    const yearEstimate = estimateForPeriod(runs, yearStart, yearEnd, now, fyLabel);
+    return { chartPoints, quarterEstimate, yearEstimate };
+  }, [runs]);
+
   if (loading) return <div className="ing-page"><p className="ing-empty">Loading…</p></div>;
 
   return (
@@ -379,6 +426,18 @@ export function IngestOMatic() {
           <div className="ing-tile">
             <span className="ing-tile-label">Errors, all time</span>
             <span className="ing-tile-value">{totals.errors.toLocaleString()}</span>
+          </div>
+        </div>
+
+        <div className="ing-net-card">
+          <h2 className="ing-h2">Reporting</h2>
+          <p className="ing-hint">
+            Daily totals across every network, this fiscal year to date ({report.yearEstimate.label}).
+          </p>
+          <IngestReportChart points={report.chartPoints} />
+          <div className="ing-est-grid">
+            <EstimateCard title={`This quarter — ${report.quarterEstimate.label}`} estimate={report.quarterEstimate} />
+            <EstimateCard title={`This fiscal year — ${report.yearEstimate.label}`} estimate={report.yearEstimate} />
           </div>
         </div>
 
