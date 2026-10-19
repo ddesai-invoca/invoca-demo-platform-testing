@@ -113,11 +113,20 @@ export interface FiscalEstimate {
   projectedCostUsd: number;
 }
 
-/** A simple, transparent run-rate projection: the average daily pace so far
- *  THIS period, extrapolated across the days remaining in it. Not a
- *  forecast model — just "actual to date, plus what the current pace would
- *  add by period end" — which is what the UI states outright rather than
- *  presenting a misleadingly precise number. */
+const RATE_WINDOW_DAYS = 7;
+
+/** A simple, transparent run-rate projection: actual-to-date for the whole
+ *  period, plus a RECENT daily pace extrapolated across the days remaining.
+ *
+ *  The rate deliberately comes from the last `RATE_WINDOW_DAYS`, not an
+ *  average over the whole period-to-date. Averaging since the quarter/
+ *  fiscal-year start would dilute the rate with every day the scheduler was
+ *  genuinely broken (most of this quarter, until this week's fixes),
+ *  producing a projection far below what the system actually does now that
+ *  it works — the exact "doesn't look accurate" symptom this was built to
+ *  avoid. A trailing week reflects current pace instead of a mostly-broken
+ *  history. Not a forecast model — just "actual to date, plus what the
+ *  recent pace would add by period end," which the UI states outright. */
 export function estimateForPeriod(runs: IngestRunLike[], start: Date, end: Date, asOf: Date, label: string): FiscalEstimate {
   const clampedAsOf = asOf < start ? start : asOf > end ? end : asOf;
   const daysTotal = daysBetweenInclusive(start, end);
@@ -134,8 +143,24 @@ export function estimateForPeriod(runs: IngestRunLike[], start: Date, end: Date,
     }
   }
 
-  const dailyCallRate = daysElapsed > 0 ? actualCalls / daysElapsed : 0;
-  const dailyCostRate = daysElapsed > 0 ? actualCostUsd / daysElapsed : 0;
+  // Rate window: the last RATE_WINDOW_DAYS ending at `asOf`, clamped to not
+  // reach before the period start (so a projection made on day 2 of a new
+  // quarter still only looks at those 2 real days, not into last quarter).
+  const rateStart = new Date(Math.max(
+    clampedAsOf.getTime() - (RATE_WINDOW_DAYS - 1) * 86_400_000,
+    start.getTime(),
+  ));
+  const rateDays = daysBetweenInclusive(rateStart, clampedAsOf);
+  let recentCalls = 0, recentCostUsd = 0;
+  for (const r of runs) {
+    const t = new Date(r.requestedAt);
+    if (t >= rateStart && t <= clampedAsOf) {
+      recentCalls += r.callsIngested || 0;
+      recentCostUsd += r.creditsUsedUsd || 0;
+    }
+  }
+  const dailyCallRate = rateDays > 0 ? recentCalls / rateDays : 0;
+  const dailyCostRate = rateDays > 0 ? recentCostUsd / rateDays : 0;
 
   return {
     label, periodStart: start, periodEnd: end, daysElapsed, daysTotal,

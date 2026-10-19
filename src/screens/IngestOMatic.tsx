@@ -138,8 +138,9 @@ function EstimateCard({ title, estimate }: { title: string; estimate: FiscalEsti
         </div>
       </div>
       <p className="ing-est-note">
-        Projected = actual to date plus this period's own average daily pace, extrapolated across the days remaining.
-        Not a forecast — just today's run-rate carried forward.
+        Projected = actual to date plus the last 7 days' daily pace, extrapolated across the days remaining — the
+        recent rate, not a period-to-date average, so it reflects how the system runs now rather than any earlier
+        stretch where it didn't. Not a forecast — just the current run-rate carried forward.
       </p>
     </div>
   );
