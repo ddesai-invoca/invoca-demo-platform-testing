@@ -134,7 +134,7 @@ function EstimateCard({ title, estimate }: { title: string; estimate: FiscalEsti
         <div className="ing-est-row">
           <span className="ing-est-label">Errors</span>
           <span className="ing-est-actual">{estimate.actualErrors.toLocaleString()} so far</span>
-          <span className="ing-est-proj">—</span>
+          <span className="ing-est-proj">~{Math.round(estimate.projectedErrors).toLocaleString()} projected</span>
         </div>
       </div>
       <p className="ing-est-note">

@@ -110,6 +110,7 @@ export interface FiscalEstimate {
   actualErrors: number;
   actualCostUsd: number;
   projectedCalls: number;
+  projectedErrors: number;
   projectedCostUsd: number;
 }
 
@@ -151,21 +152,24 @@ export function estimateForPeriod(runs: IngestRunLike[], start: Date, end: Date,
     start.getTime(),
   ));
   const rateDays = daysBetweenInclusive(rateStart, clampedAsOf);
-  let recentCalls = 0, recentCostUsd = 0;
+  let recentCalls = 0, recentErrors = 0, recentCostUsd = 0;
   for (const r of runs) {
     const t = new Date(r.requestedAt);
     if (t >= rateStart && t <= clampedAsOf) {
       recentCalls += r.callsIngested || 0;
+      recentErrors += r.errors || 0;
       recentCostUsd += r.creditsUsedUsd || 0;
     }
   }
   const dailyCallRate = rateDays > 0 ? recentCalls / rateDays : 0;
+  const dailyErrorRate = rateDays > 0 ? recentErrors / rateDays : 0;
   const dailyCostRate = rateDays > 0 ? recentCostUsd / rateDays : 0;
 
   return {
     label, periodStart: start, periodEnd: end, daysElapsed, daysTotal,
     actualCalls, actualErrors, actualCostUsd,
     projectedCalls: actualCalls + dailyCallRate * daysRemaining,
+    projectedErrors: actualErrors + dailyErrorRate * daysRemaining,
     projectedCostUsd: actualCostUsd + dailyCostRate * daysRemaining,
   };
 }
