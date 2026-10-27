@@ -197,6 +197,15 @@ export interface RunRecord {
   errors: number;
   errorDetails: ErrorDetail[];
   creditsUsedUsd: number | null;
+  /** Step 6 of AGENT_PROMPT.md (apply_revenue_signal.py), kept deliberately
+   *  separate from callsIngested/errors above: a revenue signal attaches
+   *  money to a call that was already ingested, so folding its outcome
+   *  into the ingestion counters would make the error-rate KPI and its
+   *  projection reflect a cause (a Signal API hiccup) that has nothing to
+   *  do with call ingestion. Optional because older records and any
+   *  network without this step (Healthcare) won't have it. */
+  revenueSignalsSent?: number;
+  revenueSignalsFailed?: number;
   agentSessionId?: string;
   rawFinalText?: string;
   /** The last ledger-derived "new rows since this run started" count a
@@ -316,14 +325,19 @@ export function listRuns(): RunRecord[] {
   return out.sort((a, b) => (b.requestedAt ?? "").localeCompare(a.requestedAt ?? ""));
 }
 
-export function allTimeTotals(): { callsIngested: number; creditsUsedUsd: number; errors: number } {
+export function allTimeTotals(): {
+  callsIngested: number; creditsUsedUsd: number; errors: number;
+  revenueSignalsSent: number; revenueSignalsFailed: number;
+} {
   return listRuns().reduce(
     (acc, r) => ({
       callsIngested: acc.callsIngested + (r.callsIngested || 0),
       creditsUsedUsd: acc.creditsUsedUsd + (r.creditsUsedUsd || 0),
       errors: acc.errors + (r.errors || 0),
+      revenueSignalsSent: acc.revenueSignalsSent + (r.revenueSignalsSent || 0),
+      revenueSignalsFailed: acc.revenueSignalsFailed + (r.revenueSignalsFailed || 0),
     }),
-    { callsIngested: 0, creditsUsedUsd: 0, errors: 0 },
+    { callsIngested: 0, creditsUsedUsd: 0, errors: 0, revenueSignalsSent: 0, revenueSignalsFailed: 0 },
   );
 }
 
@@ -382,8 +396,14 @@ const REPORT_SCHEMA = {
         required: ["code", "count", "reason", "explanation", "remediation"],
       },
     },
+    // Step 6 (apply_revenue_signal.py) — kept as its own pair of counters,
+    // never folded into calls_ingested/errors above. 0/0 is the correct,
+    // honest answer on a network with no revenue step (Healthcare) or a
+    // run where every eligible call was still too recent to signal.
+    revenue_signals_sent: { type: "integer" },
+    revenue_signals_failed: { type: "integer" },
   },
-  required: ["calls_ingested", "errors", "error_details"],
+  required: ["calls_ingested", "errors", "error_details", "revenue_signals_sent", "revenue_signals_failed"],
 } as const;
 
 function buildTaskPrompt(network: Network, range: DateRange, testMode: boolean, cachedFile?: string): string {
@@ -399,6 +419,7 @@ function buildTaskPrompt(network: Network, range: DateRange, testMode: boolean, 
     scope,
     `Report back honestly even if you had to stop early or escalate per your own rules — the structured output should reflect exactly what actually happened, not what was intended.`,
     `A full send of several hundred rows can legitimately take many minutes to finish — that is expected, not a problem. Wait for it to actually complete (per your operating procedure's step 3) before giving your final report. Only report calls_ingested as a mid-send snapshot if you've genuinely exhausted a long wait as your procedure describes, and if so, flag it with error code INCOMPLETE_IN_PROGRESS rather than presenting it as the final tally.`,
+    `If your operating procedure has a step 6 (attaching revenue via the Signal API), run it and report its outcome in revenue_signals_sent/revenue_signals_failed — NEVER count a revenue signal, or a revenue signal held back by its own age check, toward calls_ingested or errors. Those two fields describe call ingestion only. A network with no step 6, or a run where every eligible call was still too recent to signal, correctly reports 0 for both.`,
   ].join("\n\n");
 }
 
@@ -434,6 +455,8 @@ export async function runIngestJob(input: RunJobInput, id: string = newRunId(inp
     errors: 0,
     errorDetails: [],
     creditsUsedUsd: null,
+    revenueSignalsSent: 0,
+    revenueSignalsFailed: 0,
   };
   saveRun(rec);
 
@@ -484,6 +507,8 @@ export async function runIngestJob(input: RunJobInput, id: string = newRunId(inp
       rec.callsIngested = Number(structured.calls_ingested) || 0;
       rec.errors = Number(structured.errors) || 0;
       rec.errorDetails = Array.isArray(structured.error_details) ? structured.error_details : [];
+      rec.revenueSignalsSent = Number(structured.revenue_signals_sent) || 0;
+      rec.revenueSignalsFailed = Number(structured.revenue_signals_failed) || 0;
       // The agent's own signal for "this is a mid-send snapshot, not a
       // final tally" (see AGENT_PROMPT.md step 3) — keep it visibly
       // distinct from a genuinely completed run rather than both reading
