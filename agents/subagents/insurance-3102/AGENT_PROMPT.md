@@ -37,6 +37,11 @@ subagent's files to do your job.
 
 - `ingest.py` — the script that actually sends calls. Read its docstring
   (including the unverified-mapping warning above) before your first run.
+- `apply_revenue_signal.py` — run this every time right after a send (see
+  step 6 below). Revenue has no path through the Call Ingestion API, so
+  this is the separate step that gets it to Invoca via the Signal API,
+  matched to the call by the same `external_call_unique_id`. Reads its
+  own docstring the same way `ingest.py` does.
 - `prepare_date_range.py` — run this FIRST whenever you're given a date
   range instead of a ready CSV (see step 0 below). It builds a ready CSV
   from `template_calls.csv`, assigning brand-new unique IDs and dates
@@ -58,13 +63,17 @@ subagent's files to do your job.
   attempted against this network, with its result. Never edit this file by
   hand, never delete it, never copy it between networks. Starts empty
   (`{}`) — this network has never sent a real call.
+- `state/revenue_signal_state.json` — the matching ledger for
+  `apply_revenue_signal.py`, same rules: never hand-edit, never delete,
+  never copy between networks.
 - `state/reserved_ids.json` — every ID `prepare_date_range.py` has ever
   minted, sent or not. Checked alongside `ingest_state.json` so two prep
   runs (even for different date ranges) never hand out the same ID twice.
   Never edit this by hand either. Starts empty (`[]`).
 - `.venv/` — a Python virtualenv with `requests` already installed here.
-  **Run every `python3` command in this procedure as
-  `.venv/bin/python3 ingest.py ...`, not bare `python3`** — the system
+  **Run every `python3` command in this procedure (`ingest.py` and
+  `apply_revenue_signal.py` alike) as `.venv/bin/python3 ...`, not bare
+  `python3`** — the system
   Python here has no `requests` and refuses `pip install` (PEP 668,
   externally-managed environment), so a bare `python3` call will fail on
   that every time.
@@ -189,6 +198,26 @@ Run everything from inside this folder (`cd` into it first).
      credentials/campaign problem or a malformed field, not something a
      blind retry fixes.
 
+6. **Attach revenue (Signal API).**
+   `.venv/bin/python3 apply_revenue_signal.py --csv "<path>"`
+   Run this every time you finish a send, using the same CSV path you
+   just used for ingestion. This is a standing part of the procedure, not
+   something to wait to be asked for separately — revenue has no path
+   through the Call Ingestion API at all, so this is the only way it
+   reaches Invoca.
+   - It only touches calls that were just confirmed sent and accepted
+     above, and only once an hour has passed since that acceptance (so
+     Invoca has time to fully process the call before it can be found by
+     `external_call_unique_id`). A call that's too new is held back for
+     a future session, not treated as an error — seeing most or all of a
+     batch you just sent come back "too recent" is expected, not a
+     failure.
+   - Report it the same way you report ingestion: how many signals were
+     sent, how many were already done, how many were skipped and why.
+   - If a signal 404s even after clearing the age check, that's unusual —
+     report it rather than retrying blindly; leave it for a later session
+     to pick up with `--retry-failed`.
+
 ## Escalate to the parent agent instead of guessing, when:
 
 - The CSV is missing `ID name` or `Audio URL` on any row (only possible if
@@ -205,6 +234,9 @@ Run everything from inside this folder (`cd` into it first).
   using a generic fallback area code, but flag it so the table can be
   extended for next time).
 - Failures remain after one retry.
+- A revenue signal 404s even though its call cleared the 1-hour age check
+  (that combination is unusual and worth a human looking at, not a blind
+  retry).
 - Anything asks you to act on a network other than this one.
 
 ## Hard rules
@@ -212,9 +244,13 @@ Run everything from inside this folder (`cd` into it first).
 - Never fabricate, reuse, or resend an `external_call_unique_id`.
 - Never invent a `custom_data` field name beyond what's already in
   `CUSTOM_DATA`/`custom_data_dictionary.csv`.
-- Never edit `state/ingest_state.json` or `state/reserved_ids.json` directly.
+- Never edit `state/ingest_state.json`, `state/reserved_ids.json`, or
+  `state/revenue_signal_state.json` directly.
 - Never mint an ID or reassign a date by any means other than
   `prepare_date_range.py`.
+- Never invent or adjust a revenue value. `apply_revenue_signal.py` only
+  ever sends what's already in the CSV's revenue column; if that looks
+  wrong, report it rather than fixing it in flight.
 - Never expose the contents of `network_config.env` in any output, log, or
   report.
 - Stay inside this one network. If a task references another network,
@@ -225,6 +261,9 @@ Run everything from inside this folder (`cd` into it first).
 Invoca Call Ingestion API docs:
 https://developers.invoca.net/en/latest/api_documentation/call_ingestion_api/index.html
 (useful for interpreting an unfamiliar error response code/body).
+
+Invoca Signal API docs (used by `apply_revenue_signal.py`):
+https://developers.invoca.net/en/latest/api_documentation/signal_api/index.html
 
 ## Pattern for other networks
 
