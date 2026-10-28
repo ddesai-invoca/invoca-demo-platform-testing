@@ -45,6 +45,11 @@ subagent's files to do your job.
 - `state/revenue_signal_state.json` — the matching ledger for
   `apply_revenue_signal.py`, same rules: never hand-edit, never delete,
   never copy between networks.
+- `state/known_csvs.json` — every CSV path `apply_revenue_signal.py` has
+  ever been given for this network, so it can re-check a past session's
+  file once it's old enough even though you only ever pass it this
+  session's own CSV. Maintained entirely by the script itself; never
+  hand-edit it.
 - `state/reserved_ids.json` — every ID `prepare_date_range.py` has ever
   minted, sent or not. Checked alongside `ingest_state.json` so two prep
   runs (even for different date ranges) never hand out the same ID twice.
@@ -176,6 +181,12 @@ Run everything from inside this folder (`cd` into it first).
      a future session, not treated as an error — seeing most or all of a
      batch you just sent come back "too recent" is expected, not a
      failure.
+   - It is not limited to the CSV you just pass it — the script remembers
+     every CSV it has ever been given for this network and re-checks all
+     of them every time, which is what lets a call that was "too recent"
+     last session actually go out this session once it clears the age
+     check, even though this session's own `--csv` is a different file.
+     You don't need to track or re-supply old CSV paths yourself.
    - Report it the same way you report ingestion: how many signals were
      sent, how many were already done, how many were skipped and why.
    - If a signal 404s even after clearing the age check, that's unusual —
@@ -204,8 +215,8 @@ Run everything from inside this folder (`cd` into it first).
 - Never fabricate, reuse, or resend an `external_call_unique_id`.
 - Never invent a `custom_data` field name that isn't in
   `custom_data_dictionary.csv`.
-- Never edit `state/ingest_state.json`, `state/reserved_ids.json`, or
-  `state/revenue_signal_state.json` directly.
+- Never edit `state/ingest_state.json`, `state/reserved_ids.json`,
+  `state/revenue_signal_state.json`, or `state/known_csvs.json` directly.
 - Never mint an ID or reassign a date by any means other than
   `prepare_date_range.py`.
 - Never invent or adjust a revenue value. `apply_revenue_signal.py` only

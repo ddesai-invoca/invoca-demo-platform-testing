@@ -37,6 +37,19 @@ new and old enough. If a call that should have cleared the age check
 still 404s, that's unusual -- retry it explicitly with --retry-failed
 rather than assuming it will fix itself.
 
+IMPORTANT, and the reason --csv isn't the only source of rows: under any
+recurring cadence, the CSV you're handed each run is the one JUST sent to
+ingest.py -- so its rows are always too new to be eligible THIS run. If
+this script only ever looked at that one file, revenue would never
+actually go out: the file that's finally old enough is always a PAST
+run's file, which a single-file design would never look at again. So
+every --csv you're ever given is remembered in
+state/known_csvs.json, and every run re-checks ALL of them -- not just
+today's -- for rows that have now cleared the age gate. A CSV is dropped
+from that list automatically once every revenue-bearing row in it has
+been signaled (nothing left in it that could ever still need checking),
+so the list stays small rather than growing forever.
+
 Usage
 -----
     cd telecom-1847
@@ -65,6 +78,7 @@ from pathlib import Path
 HERE = Path(__file__).parent
 INGEST_STATE = HERE / "state" / "ingest_state.json"
 STATE = HERE / "state" / "revenue_signal_state.json"
+KNOWN_CSVS = HERE / "state" / "known_csvs.json"
 CONFIG = HERE / "network_config.env"
 
 # Network-specific: this network's template calls this column "Amount".
@@ -139,6 +153,65 @@ def load_json(p: Path) -> dict:
 def save_state(state: dict) -> None:
     STATE.parent.mkdir(parents=True, exist_ok=True)
     STATE.write_text(json.dumps(state, indent=1, sort_keys=True))
+
+
+def load_known_csvs() -> list[str]:
+    if not KNOWN_CSVS.exists():
+        return []
+    try:
+        return json.loads(KNOWN_CSVS.read_text())
+    except (json.JSONDecodeError, OSError):
+        return []
+
+
+def save_known_csvs(paths: list[str]) -> None:
+    KNOWN_CSVS.parent.mkdir(parents=True, exist_ok=True)
+    KNOWN_CSVS.write_text(json.dumps(sorted(set(paths)), indent=1))
+
+
+def load_rows(path: Path) -> list[dict]:
+    """Read one CSV's rows, tagging each with where it came from (used only
+    for the state ledger's source_csv field, never a real CSV column so it
+    can't collide with one). A file that's gone missing or unreadable is
+    reported and skipped rather than crashing the whole sweep over one bad
+    path -- the caller is still told about it via the returned empty list."""
+    try:
+        rows = list(csv.DictReader(open(path, newline="", encoding="utf-8-sig")))
+    except OSError as exc:
+        print(f"  warning: could not read {path} ({exc}) -- skipping it this run")
+        return []
+    for r in rows:
+        r["__source__"] = path.name
+    return rows
+
+
+def fully_resolved(path: Path, state: dict) -> bool:
+    """True once every revenue-bearing row in this CSV has already been
+    successfully signaled -- i.e. nothing in it could ever still need a
+    future run to check. A missing file is treated as resolved too: there
+    is nothing left to do about a CSV that no longer exists on disk."""
+    if not path.exists():
+        return True
+    for row in load_rows(path):
+        cid = row.get("ID name", "").strip()
+        if not cid or not revenue_of(row):
+            continue
+        entry = state.get(cid)
+        if not entry or entry.get("code") not in OK_CODES:
+            return False
+    return True
+
+
+def resolve_tracked_csvs(csv_path: Path, state: dict) -> list[Path]:
+    """Add csv_path to the remembered set and drop anything now fully
+    resolved or no longer on disk, returning the paths this run should
+    sweep. Pure -- does not write state/known_csvs.json itself, so a
+    --dry-run computing this stays genuinely side-effect-free; the caller
+    persists the result on a real run."""
+    known = {str(Path(p).resolve()) for p in load_known_csvs()}
+    known.add(str(csv_path.resolve()))
+    kept = [p for p in known if not fully_resolved(Path(p), state)]
+    return [Path(p) for p in kept]
 
 
 def build_body(row: dict, revenue: str) -> dict:
@@ -226,9 +299,23 @@ def main() -> int:
     csv_path = Path(args.csv)
     if not csv_path.exists():
         sys.exit(f"missing {csv_path}")
-    rows = list(csv.DictReader(open(csv_path, newline="", encoding="utf-8-sig")))
-    if not rows:
+    own_rows = load_rows(csv_path)
+    if not own_rows:
         sys.exit(f"{csv_path.name} has no data rows.")
+
+    # Sweep every CSV this network has ever been pointed at, not just this
+    # run's -- see the module docstring for why a single-file design would
+    # mean revenue never actually goes out under a recurring cadence.
+    tracked = resolve_tracked_csvs(csv_path, state)
+    if not args.dry_run:
+        save_known_csvs([str(p) for p in tracked])
+    rows_by_id: dict[str, dict] = {}
+    for p in tracked:
+        for row in load_rows(p):
+            cid = row.get("ID name", "").strip()
+            if cid and cid not in rows_by_id:
+                rows_by_id[cid] = row
+    rows = list(rows_by_id.values())
 
     ingest_state = load_json(INGEST_STATE)
     eligible, skipped = eligible_rows(rows, ingest_state, args.min_age_minutes)
@@ -252,7 +339,8 @@ def main() -> int:
         print(f"endpoint      : {SIGNAL_ENDPOINT}")
         print(f"partner id    : {PARTNER_UNIQUE_ID}")
         print(f"min age       : {args.min_age_minutes} minute(s) since ingestion")
-        print(f"csv           : {csv_path.name}  ({len(rows)} rows)")
+        print(f"this run's csv: {csv_path.name}")
+        print(f"tracking      : {len(tracked)} known CSV(s), {len(rows)} total row(s) across them")
         print(f"auth          : raw token in the Authorization header (from network_config.env, not shown)")
         print(f"eligible      : {len(eligible)}")
         print(f"would send    : {len(todo)}")
@@ -279,7 +367,8 @@ def main() -> int:
     headers = {"Content-type": "application/json", "Authorization": cfg["INVOCA_API_TOKEN"]}
 
     print(f"endpoint   : {SIGNAL_ENDPOINT}")
-    print(f"csv        : {csv_path.name}")
+    print(f"this run's csv: {csv_path.name}")
+    print(f"tracking   : {len(tracked)} known CSV(s)")
     print(f"eligible   : {len(eligible)} (skipped: {dict(skipped)})" if skipped else f"eligible   : {len(eligible)}")
     print(f"sending    : {len(todo)} call(s)\n")
 
@@ -299,7 +388,7 @@ def main() -> int:
             code, payload = 0, {"exception": f"{type(exc).__name__}: {exc}"}
 
         entry = {"code": code, "ts": time.strftime("%Y-%m-%dT%H:%M:%S"), "revenue": revenue,
-                  "source_csv": csv_path.name}
+                  "source_csv": row.get("__source__", csv_path.name)}
         if code in OK_CODES:
             counts["ok"] += 1
             mark, detail = "ok  ", f"revenue {revenue}"
