@@ -26,6 +26,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { generateProfile, slugify } from "./engine/core.ts";
+import { brandCheck } from "./engine/brandCheck.ts";
 import { chatReply } from "./engine/chat.ts";
 import { analyzeSms } from "./engine/analyze.ts";
 import { geocodeZip } from "./engine/places.ts";
@@ -280,6 +281,16 @@ app.use(async (req, res, next) => {
 });
 
 const isOverloaded = (e: any) => e?.status === 529 || e?.status === 429 || /overload/i.test(String(e?.message || ""));
+
+/* POST /api/brand-check {name,url} -> {ok,warnings,resolvedDomain,siteName}. The Launch form calls
+   it BEFORE the build so a mistyped website is caught in seconds, not after ~4 minutes. Advisory
+   only: it never blocks, and a check that itself fails answers ok so it cannot stop a launch. */
+app.post("/api/brand-check", async (req, res) => {
+  const { name, url } = req.body || {};
+  if (!name || !url) return res.status(400).json({ error: "name and url are required." });
+  try { res.json(await brandCheck(String(name), String(url))); }
+  catch (e) { routeFailed("brand-check", e, { level: "record", title: "Brand check threw" }); res.json({ ok: true, warnings: [] }); }
+});
 
 /* POST /api/generate → SSE stream of progress, then the finished profile. */
 app.post("/api/generate", async (req, res) => {

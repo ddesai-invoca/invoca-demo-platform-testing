@@ -155,6 +155,9 @@ export function Launch() {
   const [url, setUrl] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  /* Pre-build brand check findings (see engine/brandCheck.ts). Non-null = waiting on the SE. */
+  const [brandWarn, setBrandWarn] = useState<{ warnings: { code: string; message: string }[]; resolvedDomain?: string; siteName?: string } | null>(null);
+  const [checking, setChecking] = useState(false);
   const [statuses, setStatuses] = useState<Record<string, StepStatus>>({});
   const [, setTick] = useState(0);
   const stepStartRef = useRef<Record<string, number>>({});
@@ -332,15 +335,31 @@ export function Launch() {
   }, 0);
   const pct = Math.min(99, Math.round((doneWeight / TOTAL_WEIGHT) * 100));
 
-  async function launch(e: React.FormEvent) {
+  async function launch(e: React.FormEvent, skipCheck = false) {
     e.preventDefault();
-    if (busy) return;
+    if (busy || checking) return;
     const trimmedName = name.trim();
     let trimmedUrl = url.trim();
     if (!trimmedName || !trimmedUrl) { setError("Enter both a prospect name and a website URL."); return; }
     if (!/^https?:\/\//i.test(trimmedUrl)) trimmedUrl = "https://" + trimmedUrl;
 
     setError(null);
+    if (!skipCheck) {
+      /* Catch a mistyped website BEFORE the multi-minute build. Advisory: any failure of
+         the check itself falls through to building, so it can never block a launch. */
+      setChecking(true);
+      try {
+        const r = await fetch("/api/brand-check", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ name: trimmedName, url: trimmedUrl }),
+        });
+        const c = r.ok ? await r.json() : null;
+        if (c && Array.isArray(c.warnings) && c.warnings.length) { setBrandWarn(c); setChecking(false); return; }
+      } catch { /* fall through and build */ }
+      setChecking(false);
+    }
+    setBrandWarn(null);
     setStatuses({});
     stepStartRef.current = {};
     setBusy(true);
@@ -453,7 +472,7 @@ export function Launch() {
               <span>Prospect name</span>
               <input
                 type="text" value={name} autoFocus
-                onChange={(e) => setName(e.target.value)}
+                onChange={(e) => { setName(e.target.value); setBrandWarn(null); }}
                 placeholder="e.g. Shady Blinds"
               />
             </label>
@@ -461,7 +480,7 @@ export function Launch() {
               <span>Website URL</span>
               <input
                 type="text" value={url}
-                onChange={(e) => setUrl(e.target.value)}
+                onChange={(e) => { setUrl(e.target.value); setBrandWarn(null); }}
                 placeholder="e.g. https://www.shadyblindsnow.com"
               />
             </label>
@@ -473,7 +492,14 @@ export function Launch() {
               </label>
             )}
             {error && <div className="launch-error">{error}</div>}
-            <button className="launch-btn" type="submit">Launch demo</button>
+            {brandWarn && (
+              <div className="launch-error" role="alert">
+                <strong>Check the website before building{brandWarn.resolvedDomain ? ` (${brandWarn.resolvedDomain})` : ""}</strong>
+                <ul>{brandWarn.warnings.map((w, i) => <li key={i}>{w.message}</li>)}</ul>
+                <button type="button" className="launch-btn" onClick={(e) => launch(e as unknown as React.FormEvent, true)}>Build anyway</button>
+              </div>
+            )}
+            <button className="launch-btn" type="submit" disabled={checking}>{checking ? "Checking website…" : "Launch demo"}</button>
           </form>
         )}
 
