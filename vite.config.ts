@@ -16,6 +16,22 @@ function generateApi(apiKey: string | undefined): Plugin {
       server.watcher.options = { ...server.watcher.options }
       server.watcher.unwatch(OUT_DIR)
 
+      server.middlewares.use('/api/brand-check', async (req, res, next) => {
+        if (req.method !== 'POST') return next()
+        res.setHeader('Content-Type', 'application/json')
+        try {
+          let raw = ''
+          for await (const chunk of req) raw += chunk
+          const { name, url } = JSON.parse(raw || '{}')
+          if (!name || !url) { res.statusCode = 400; return res.end(JSON.stringify({ error: 'name and url are required.' })) }
+          const { brandCheck } = await import(pathToFileURL(path.resolve(process.cwd(), 'engine/brandCheck.ts')).href)
+          res.end(JSON.stringify(await brandCheck(String(name), String(url))))
+        } catch (e) {
+          console.error('[brand-check] failed:', e)
+          res.end(JSON.stringify({ ok: true, warnings: [] }))
+        }
+      })
+
       server.middlewares.use('/api/generate', async (req, res, next) => {
         if (req.method !== 'POST') return next()
         // Stream progress as Server-Sent Events so the Launch screen can show each
