@@ -86,6 +86,17 @@ CONFIG = HERE / "network_config.env"
 # instead -- that is the one line that differs between networks.
 REVENUE_COLUMN = "Amount"
 
+# Network-specific: the outcome column that actually means "this call
+# converted". An Amount value is only ever meant to exist on a row where
+# this also reads "1" (verified against template_calls.csv: zero rows
+# disagree) -- but that is a property of the DATA, not something this
+# script enforced on its own until now. A row where one is set without
+# the other is corrupt, and the hard rule below ("never invent or adjust
+# a revenue value") cuts both ways: a stray amount on a non-conversion is
+# just as much an invented value as fixing a malformed one would be, so
+# it is refused rather than silently sent.
+CONVERSION_COLUMN = "New Service Activation"
+
 # This network's own set of codes that mean ingest.py's send succeeded.
 # Taken from ingest.py's own OK_CODES in this same folder -- keep the two
 # in sync if ingest.py's ever changes.
@@ -130,6 +141,25 @@ def revenue_of(row: dict) -> str:
     if not MONEY_RE.match(stripped):
         return ""
     return stripped
+
+
+def converted(row: dict) -> bool:
+    """True iff this network's own conversion flag says this call is a
+    real conversion. The Amount column is only ever supposed to carry a
+    value when this is true -- see CONVERSION_COLUMN above."""
+    return clean(row.get(CONVERSION_COLUMN, "")) == "1"
+
+
+def revenue_if_converted(row: dict) -> str:
+    """The row's revenue, but ONLY when the conversion flag agrees -- an
+    Amount value by itself is not proof of a sale. A row where the two
+    disagree (a dollar amount with no conversion flag, or a conversion
+    flag with no amount) is corrupt data, and this treats it exactly like
+    a malformed amount: nothing is sent, never guessed at."""
+    revenue = revenue_of(row)
+    if not revenue or not converted(row):
+        return ""
+    return revenue
 
 
 def load_config() -> dict[str, str]:
@@ -194,7 +224,7 @@ def fully_resolved(path: Path, state: dict) -> bool:
         return True
     for row in load_rows(path):
         cid = row.get("ID name", "").strip()
-        if not cid or not revenue_of(row):
+        if not cid or not revenue_if_converted(row):
             continue
         entry = state.get(cid)
         if not entry or entry.get("code") not in OK_CODES:
@@ -239,9 +269,14 @@ def eligible_rows(rows: list[dict], ingest_state: dict,
         if not cid:
             skipped["no ID name"] += 1
             continue
-        revenue = revenue_of(row)
+        revenue = revenue_if_converted(row)
         if not revenue:
-            skipped["no revenue on this row"] += 1
+            if revenue_of(row) and not converted(row):
+                skipped["revenue present but conversion flag not set -- not sending"] += 1
+            elif converted(row) and not revenue_of(row):
+                skipped["conversion flag set but no revenue on this row"] += 1
+            else:
+                skipped["no revenue on this row"] += 1
             continue
         ingest_entry = ingest_state.get(cid)
         if not ingest_entry:
@@ -348,7 +383,7 @@ def main() -> int:
         if skipped:
             print(f"skipped       : {dict(skipped)}")
         if sample is not None:
-            revenue = revenue_of(sample) or "0.00"
+            revenue = revenue_if_converted(sample) or "0.00"
             print(f"\nsample request body:\n{json.dumps(build_body(sample, revenue), indent=2)}")
         return 0
 
@@ -375,7 +410,7 @@ def main() -> int:
     counts: Counter = Counter()
     for n, row in enumerate(todo, 1):
         cid = row["ID name"].strip()
-        revenue = revenue_of(row)
+        revenue = revenue_if_converted(row)
         body = build_body(row, revenue)
         try:
             resp = requests.post(SIGNAL_ENDPOINT, headers=headers, json=body, timeout=TIMEOUT)
